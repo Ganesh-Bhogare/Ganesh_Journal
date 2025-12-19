@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ganesh-journal
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_WEB
+        value: "true"
+      # Set these in the Render dashboard as needed:
+      # - MONGO_URI
+      # - JWT_SECRET
+      # - OPENAI_API_KEY
+      # - OPENAI_MODEL
+      # - OPENAI_BASE_URL
+      # - OPENAI_APP_NAME

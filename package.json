@@ -1,0 +1,32 @@
+{
+  "name": "ganesh-journal",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "concurrently \"npm:dev:web\" \"npm:dev:server\"",
+    "dev:web": "npm --workspace web run dev",
+    "dev:server": "npm --workspace server run dev",
+    "build": "npm --workspace server run build && npm --workspace web run build",
+    "start": "npm --workspace server run start"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "keywords": [
+    "forex",
+    "journal",
+    "analytics"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Ganesh Journal monorepo: Next.js frontend + Express/MongoDB backend"
+}
