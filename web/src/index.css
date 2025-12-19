@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    color-scheme: light dark;
+}
+
+body {
+    @apply bg-white text-neutral-900 dark:bg-black dark:text-white font-sans antialiased;
+}
+
+.sidebar-link {
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800/60 hover:shadow-md hover:shadow-black/10 dark:hover:shadow-black/30 transition-all duration-200;
+}
+
+/* 3D Transform utilities */
+@layer utilities {
+    .transform-3d {
+        transform-style: preserve-3d;
+    }
+
+    .perspective-1000 {
+        perspective: 1000px;
+    }
+
+    .backface-hidden {
+        backface-visibility: hidden;
+    }
+}
+
+/* Gradient animations */
+@keyframes gradient-shift {
+
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+.animate-gradient {
+    animation: gradient-shift 3s ease infinite;
+    background-size: 200% 200%;
+}
+
+/* Glow effects */
+.glow-brand {
+    box-shadow: 0 0 20px rgba(251, 146, 60, 0.3);
+}
+
+.glow-brand-strong {
+    box-shadow: 0 0 30px rgba(251, 146, 60, 0.5);
+}
