@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
-import { createTrade, updateTrade, deleteTrade, listTrades, recalculateAllTrades, uploadScreenshots, importTrades } from "../controllers/tradesController";
+import { createTrade, updateTrade, deleteTrade, listTrades, recalculateAllTrades, uploadScreenshots, importTrades, getTrade, setChartFromEntryScreenshot } from "../controllers/tradesController";
 import { upload } from "../utils/uploader";
 import { config } from "../config";
 import path from "path";
@@ -8,6 +8,8 @@ import path from "path";
 const router = Router();
 
 router.get("/", requireAuth, listTrades);
+router.get("/:id", requireAuth, getTrade);
+router.post("/:id/chart-from-entry", requireAuth, setChartFromEntryScreenshot);
 router.post("/", requireAuth, createTrade);
 router.post("/import", requireAuth, importTrades);
 router.patch("/:id", requireAuth, updateTrade);
@@ -18,7 +20,8 @@ router.post("/recalculate", requireAuth, recalculateAllTrades);
 router.post("/:id/screenshots", requireAuth, upload.fields([
     { name: 'htf', maxCount: 1 },
     { name: 'entry', maxCount: 1 },
-    { name: 'postTrade', maxCount: 1 }
+    { name: 'postTrade', maxCount: 1 },
+    { name: 'chart', maxCount: 1 }
 ]), uploadScreenshots);
 
 // Upload screenshots and return URLs for association (legacy)

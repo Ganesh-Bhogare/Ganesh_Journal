@@ -78,7 +78,8 @@ export default function AITradeAnalysis() {
         setTradeLoading(true)
         setTradeResult(null)
         try {
-            const { data } = await api.post('/ai/analyze-trade', { tradeId: selectedTradeId, includeImages: true })
+            // Keep OpenAI usage minimal by default (images increase cost)
+            const { data } = await api.post('/ai/analyze-trade', { tradeId: selectedTradeId, includeImages: false })
             setTradeResult(data)
         } catch (err: any) {
             const msg = err?.response?.data?.error || 'Failed to analyze trade'

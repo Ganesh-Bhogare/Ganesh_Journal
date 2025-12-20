@@ -5,10 +5,12 @@ interface AnimatedCardProps {
     children: ReactNode
     delay?: number
     className?: string
+    disableHover?: boolean
 }
 
-export default function AnimatedCard({ children, delay = 0, className = '' }: AnimatedCardProps) {
+export default function AnimatedCard({ children, delay = 0, className = '', disableHover }: AnimatedCardProps) {
     const shouldReduceMotion = useReducedMotion()
+    const allowHover = !shouldReduceMotion && !disableHover
 
     return (
         <motion.div
@@ -16,17 +18,17 @@ export default function AnimatedCard({ children, delay = 0, className = '' }: An
             animate={{ opacity: 1, y: 0 }}
             transition={shouldReduceMotion ? { duration: 0.01 } : { duration: 0.45, delay, type: 'tween', ease: 'easeOut' }}
             whileHover={
-                shouldReduceMotion
-                    ? undefined
-                    : {
+                allowHover
+                    ? {
                         y: -2,
                         scale: 1.01,
                         rotateX: 2,
                         rotateY: -2,
                     }
+                    : undefined
             }
-            whileTap={shouldReduceMotion ? undefined : { scale: 0.995 }}
-            style={shouldReduceMotion ? undefined : { transformPerspective: 1200 }}
+            whileTap={allowHover ? { scale: 0.995 } : undefined}
+            style={allowHover ? { transformPerspective: 1200 } : undefined}
             className={`group relative overflow-hidden bg-gradient-to-b from-white/90 to-neutral-50/80 dark:from-neutral-900/95 dark:to-neutral-950/85 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80 p-6 shadow-xl shadow-black/10 dark:shadow-black/40 hover:border-neutral-300/80 dark:hover:border-neutral-700/80 transition-colors transform-gpu ${className}`}
         >
             <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">

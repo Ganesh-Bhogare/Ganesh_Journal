@@ -703,6 +703,16 @@ export default function Trades() {
                                     Analyze with AI
                                 </button>
                                 <button
+                                    onClick={() => {
+                                        const id = viewingTrade?._id
+                                        setViewingTrade(null)
+                                        if (id) navigate(`/trade-chart?tradeId=${encodeURIComponent(id)}`)
+                                    }}
+                                    className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
+                                >
+                                    Open Chart
+                                </button>
+                                <button
                                     onClick={() => setViewingTrade(null)}
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors"
                                 >
@@ -737,11 +747,12 @@ export default function Trades() {
 
                         <div>
                             <div className="text-sm font-semibold mb-3">Screenshots</div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 {([
                                     { key: 'htfScreenshot', label: 'HTF Bias' },
                                     { key: 'entryScreenshot', label: 'Entry TF' },
                                     { key: 'postTradeScreenshot', label: 'Post-Trade' },
+                                    { key: 'chartScreenshot', label: 'Chart Snapshot' },
                                 ] as const).map((s) => {
                                     const url = fileUrl(viewingTrade?.[s.key])
                                     return (

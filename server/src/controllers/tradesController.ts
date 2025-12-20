@@ -3,6 +3,17 @@ import { Trade } from "../models/Trade";
 import { tradeSchema } from "../utils/validation";
 import { User } from "../models/User";
 
+export async function getTrade(req: Request & { userId?: string }, res: Response) {
+    try {
+        const { id } = req.params;
+        const trade = await Trade.findOne({ _id: id, userId: req.userId });
+        if (!trade) return res.status(404).json({ error: "Trade not found" });
+        return res.json(trade);
+    } catch (_err) {
+        return res.status(500).json({ error: "Failed to get trade" });
+    }
+}
+
 function startOfDayUtc(d: Date) {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
@@ -347,6 +358,9 @@ export async function uploadScreenshots(req: Request & { userId?: string }, res:
         if (files.postTrade && files.postTrade[0]) {
             updates.postTradeScreenshot = `/uploads/${files.postTrade[0].filename}`;
         }
+        if (files.chart && files.chart[0]) {
+            updates.chartScreenshot = `/uploads/${files.chart[0].filename}`;
+        }
 
         const updated = await Trade.findOneAndUpdate(
             { _id: id, userId: req.userId },
@@ -357,5 +371,27 @@ export async function uploadScreenshots(req: Request & { userId?: string }, res:
         return res.json(updated);
     } catch (_err) {
         return res.status(500).json({ error: "Failed to upload screenshots" });
+    }
+}
+
+export async function setChartFromEntryScreenshot(req: Request & { userId?: string }, res: Response) {
+    try {
+        const { id } = req.params;
+        const trade = await Trade.findOne({ _id: id, userId: req.userId }).select("entryScreenshot chartScreenshot");
+        if (!trade) return res.status(404).json({ error: "Trade not found" });
+
+        if (!trade.entryScreenshot) {
+            return res.status(400).json({ error: "No entry screenshot found on this trade" });
+        }
+
+        const updated = await Trade.findOneAndUpdate(
+            { _id: id, userId: req.userId },
+            { chartScreenshot: trade.entryScreenshot },
+            { new: true }
+        );
+
+        return res.json(updated);
+    } catch (_err) {
+        return res.status(500).json({ error: "Failed to set chart screenshot" });
     }
 }

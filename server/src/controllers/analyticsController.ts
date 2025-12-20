@@ -498,8 +498,18 @@ export async function gptInsights(req: Request & { userId?: string }, res: Respo
             });
         }
 
-        const limit = Math.max(10, Math.min(200, parseInt((req.query.limit as string) || "60", 10) || 60));
-        const includeImages = String(req.query.images ?? "true").toLowerCase() !== "false";
+        // Keep defaults cheap: fewer trades + no images unless explicitly requested.
+        const limit = Math.max(10, Math.min(200, parseInt((req.query.limit as string) || "30", 10) || 30));
+        const includeImages = String(req.query.images ?? "false").toLowerCase() === "true";
+
+        // Simple in-memory cache to avoid repeated OpenAI calls on refresh.
+        // Keyed by user + limit + includeImages.
+        const cacheKey = `${req.userId || ""}|${limit}|${includeImages ? "img" : "noimg"}`;
+        const now = Date.now();
+        const cached = (gptInsightsCache.get(cacheKey) as any) || null;
+        if (cached && cached.expiresAt > now) {
+            return res.json(cached.payload);
+        }
 
         const trades = await Trade.find({ userId: req.userId })
             .sort({ date: -1 })
@@ -614,8 +624,12 @@ export async function gptInsights(req: Request & { userId?: string }, res: Respo
             parsed = { raw: text };
         }
 
-        return res.json({ model: config.openaiModel, tradesAnalyzed: trades.length, imagesUsed: imageItems.length, result: parsed });
+        const payloadOut = { model: config.openaiModel, tradesAnalyzed: trades.length, imagesUsed: imageItems.length, result: parsed };
+        gptInsightsCache.set(cacheKey, { expiresAt: now + 5 * 60 * 1000, payload: payloadOut });
+        return res.json(payloadOut);
     } catch (err: any) {
         return res.status(500).json({ error: "Failed to compute GPT insights", detail: err?.message || String(err) });
     }
 }
+
+const gptInsightsCache = new Map<string, { expiresAt: number; payload: any }>();

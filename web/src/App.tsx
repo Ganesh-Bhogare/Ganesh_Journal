@@ -15,6 +15,7 @@ import Settings from './pages/Settings'
 import RiskCalculator from './pages/RiskCalculator'
 import CalendarView from './pages/CalendarView'
 import AITradeAnalysis from './pages/AITradeAnalysis'
+import TradeChart from './pages/TradeChart'
 
 export default function App() {
     const { user } = useAuth()
@@ -66,6 +67,7 @@ export default function App() {
                                             <Route path="/" element={<Dashboard />} />
                                             <Route path="/analytics" element={<Analytics />} />
                                             <Route path="/ai-analysis" element={<AITradeAnalysis />} />
+                                            <Route path="/trade-chart" element={<TradeChart />} />
                                             <Route path="/trades" element={<Trades />} />
                                             <Route path="/notes" element={<Notes />} />
                                             <Route path="/risk-calculator" element={<RiskCalculator />} />

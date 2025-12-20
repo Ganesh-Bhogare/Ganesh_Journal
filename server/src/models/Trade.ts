@@ -86,6 +86,7 @@ export interface ITrade extends Document {
     htfScreenshot?: string;
     entryScreenshot?: string;
     postTradeScreenshot?: string;
+    chartScreenshot?: string;
 
     // Notes
     notes?: string;
@@ -176,6 +177,7 @@ const TradeSchema = new Schema<ITrade>({
     htfScreenshot: { type: String },
     entryScreenshot: { type: String },
     postTradeScreenshot: { type: String },
+    chartScreenshot: { type: String },
 
     // Notes
     notes: { type: String },

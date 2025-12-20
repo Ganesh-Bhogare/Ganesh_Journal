@@ -64,7 +64,8 @@ export default function Analytics() {
         if (gptLoading) return
         setGptLoading(true)
         try {
-            const { data } = await api.get('/analytics/gpt-insights')
+            // Keep OpenAI usage minimal by default: fewer trades + no screenshots
+            const { data } = await api.get('/analytics/gpt-insights?limit=30&images=false')
             setGpt(data)
         } catch (err: any) {
             const msg = err?.response?.data?.error || 'Failed to generate GPT insights'

@@ -30,5 +30,6 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "Ganesh Journal monorepo: Next.js frontend + Express/MongoDB backend"
+  "description": "Ganesh Journal monorepo: Next.js frontend + Express/MongoDB backend",
+  "dependencies": {}
 }

@@ -5,6 +5,10 @@ node_modules
 **/dist
 **/build
 
+# uploads (generated at runtime)
+server/uploads/
+uploads/
+
 # env files (do not commit secrets)
 .env
 **/.env
