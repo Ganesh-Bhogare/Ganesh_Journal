@@ -76,6 +76,27 @@ A professional full-stack Forex trading journal web app with modern 3D animation
   - Performance metrics by strategy
   - Trade distribution analysis
 
+### 🤖 **AI Coach & Trade Analysis**
+
+**Implemented now**
+- Per-trade AI analysis (post-trade feedback)
+- Trade-specific chat assistant (asks/answers based on your journal data)
+- Weekly review report
+- All-trades summary report with visual charts
+
+**Planned / Roadmap ideas**
+- Automatic trade analysis across history (best pairs, sessions, setups)
+- Risk management AI (lot size suggestions, max daily loss, stop-after-X-losses)
+- Psychology & behavior analysis (revenge trading, overtrading, FOMO, rule-breaking)
+- Smart journaling (auto-tagging, converting notes into structured fields)
+- Strategy performance scoring and focus recommendations
+- Prop-firm readiness checks (rule violation predictions and alerts)
+
+**What AI should NOT do**
+- Give buy/sell signals
+- Predict market direction
+- Replace your strategy
+
 ### 🛠️ **Additional Features**
 - Recent trades table with inline actions
 - Filterable trade history

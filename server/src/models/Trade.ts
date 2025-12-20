@@ -74,6 +74,10 @@ export interface ITrade extends Document {
     riskRespected: boolean;
     noEarlyExit: boolean;
 
+    // Risk engine output (server-calculated)
+    riskViolations?: string[];
+    riskWarnings?: string[];
+
     // Auto-Classification
     tradeQuality?: "A+ Trade" | "Rule Break Trade" | "Standard Trade";
     ruleBreakCount?: number;
@@ -159,6 +163,10 @@ const TradeSchema = new Schema<ITrade>({
     validPDArray: { type: Boolean, default: true },
     riskRespected: { type: Boolean, default: true },
     noEarlyExit: { type: Boolean, default: true },
+
+    // Risk engine output
+    riskViolations: [{ type: String }],
+    riskWarnings: [{ type: String }],
 
     // Auto-Classification
     tradeQuality: { type: String, enum: ["A+ Trade", "Rule Break Trade", "Standard Trade"] },

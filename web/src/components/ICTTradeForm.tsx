@@ -240,11 +240,15 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         } catch (err: any) {
             console.error('Failed to save trade:', err)
             const data = err?.response?.data
+            const violations = Array.isArray(data?.violations) ? data.violations.filter(Boolean) : []
             const msg =
                 (typeof data?.message === 'string' && data.message) ||
                 (typeof data?.error === 'string' && data.error) ||
                 (Array.isArray(data?.error) ? data.error.map((e: any) => e?.message).filter(Boolean).join(', ') : '')
-            setErrors([msg || 'Failed to save trade. Please try again.'])
+            const combined = [msg || 'Failed to save trade. Please try again.', ...violations]
+                .map((s) => String(s || '').trim())
+                .filter(Boolean)
+            setErrors(Array.from(new Set(combined)))
         } finally {
             setLoading(false)
         }

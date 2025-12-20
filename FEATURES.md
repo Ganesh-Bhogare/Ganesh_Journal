@@ -74,7 +74,22 @@
 - [x] JWT middleware
 - [x] MongoDB integration
 
+### ✅ **AI Coach & Reports**
+- [x] Per-trade AI analysis (post-trade feedback)
+- [x] Trade-specific AI chat
+- [x] Weekly review report
+- [x] All-trades summary report
+
 ## 🚧 **Future Enhancements** (Optional)
+
+### 🤖 AI (Roadmap)
+- [ ] Automatic trade pattern analysis (best pairs/sessions/setups)
+- [ ] Auto-tagging (setup type, market condition, news/no-news)
+- [ ] Risk rules enforcement (max daily loss, max trades/day, stop-after-X-losses)
+- [ ] Pre-trade rule violation warnings
+- [ ] Psychology / behavior detection (revenge trading, overtrading, FOMO)
+- [ ] Strategy performance scoring + focus recommendations
+- [ ] Prop-firm readiness checks (rule compliance alerts)
 
 ### 📅 Calendar View
 - [ ] Interactive calendar

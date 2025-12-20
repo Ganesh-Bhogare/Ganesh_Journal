@@ -1,6 +1,123 @@
 import { Request, Response } from "express";
 import { Trade } from "../models/Trade";
 import { tradeSchema } from "../utils/validation";
+import { User } from "../models/User";
+
+function startOfDayUtc(d: Date) {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+function endOfDayUtc(d: Date) {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0, 0));
+}
+
+function pipMultiplierForInstrument(instrument: string) {
+    const sym = (instrument || "").toUpperCase();
+    if (sym.includes("XAU") || sym.includes("XAG")) return 10;
+    if (sym.endsWith("JPY")) return 100;
+    return 10000;
+}
+
+function toNum(v: any): number | undefined {
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+async function applyRiskEngine(userId: string | undefined, tradeLike: any) {
+    if (!userId) return { allowed: true, tradePatch: {} as any };
+
+    const user = await User.findById(userId).select("preferences");
+    const prefs: any = user?.preferences || {};
+    const enforcement: "warn" | "block" = prefs.enforcement === "warn" ? "warn" : "block";
+
+    const d = tradeLike?.date ? new Date(tradeLike.date) : new Date();
+    const dayStart = startOfDayUtc(d);
+    const dayEnd = endOfDayUtc(d);
+
+    const todaysTrades = await Trade.find({
+        userId,
+        date: { $gte: dayStart, $lt: dayEnd },
+    }).select("pnl outcome");
+
+    const todayCount = todaysTrades.length;
+    const todayNetPnl = todaysTrades.reduce((sum, t: any) => sum + (typeof t.pnl === "number" ? t.pnl : 0), 0);
+    const todayLossCount = todaysTrades.reduce((sum, t: any) => sum + (t.outcome === "loss" ? 1 : 0), 0);
+
+    const violations: string[] = [];
+    const warnings: string[] = [];
+
+    const maxTradesPerDay = toNum(prefs.maxTradesPerDay);
+    if (maxTradesPerDay && todayCount >= maxTradesPerDay) {
+        violations.push(`Max trades/day reached (${todayCount}/${maxTradesPerDay}).`);
+    }
+
+    const stopAfterLosses = toNum(prefs.stopAfterLosses);
+    if (stopAfterLosses && todayLossCount >= stopAfterLosses) {
+        violations.push(`Stop-after-losses triggered (${todayLossCount}/${stopAfterLosses}).`);
+    }
+
+    const accountBalance = toNum(prefs.accountBalance);
+    const maxDailyLossAmount = toNum(prefs.maxDailyLossAmount);
+    const maxDailyLossPercent = toNum(prefs.maxDailyLossPercent);
+
+    if (maxDailyLossAmount && todayNetPnl <= -Math.abs(maxDailyLossAmount)) {
+        violations.push(`Max daily loss hit (PnL ${todayNetPnl.toFixed(2)} <= -${Math.abs(maxDailyLossAmount).toFixed(2)}).`);
+    }
+
+    if (accountBalance && maxDailyLossPercent) {
+        const threshold = accountBalance * (Math.abs(maxDailyLossPercent) / 100);
+        if (todayNetPnl <= -threshold) {
+            violations.push(`Max daily loss hit (PnL ${todayNetPnl.toFixed(2)} <= -${threshold.toFixed(2)} from ${maxDailyLossPercent}%).`);
+        }
+    }
+
+    // Sizing suggestion (optional)
+    const entry = toNum(tradeLike.entryPrice);
+    const sl = toNum(tradeLike.stopLoss);
+    const instrument = String(tradeLike.instrument || "");
+
+    let riskUsd = toNum(tradeLike.riskPerTrade);
+    if (!riskUsd) {
+        const riskMode = prefs.riskMode === "fixed" ? "fixed" : "percent";
+        if (riskMode === "fixed") {
+            const amt = toNum(prefs.riskAmount);
+            if (amt) riskUsd = amt;
+        } else {
+            const rp = toNum(prefs.riskPercent);
+            if (accountBalance && rp) riskUsd = accountBalance * (rp / 100);
+        }
+    }
+
+    const pipValuePerLot = toNum(prefs.pipValuePerLot) || 10;
+    let riskInDollars: number | undefined = riskUsd;
+    let suggestedLotSize: number | undefined;
+
+    if (entry && sl && instrument && riskUsd) {
+        const mult = pipMultiplierForInstrument(instrument);
+        const pipsAtRisk = Math.abs(entry - sl) * mult;
+        if (pipsAtRisk > 0) {
+            suggestedLotSize = riskUsd / (pipsAtRisk * pipValuePerLot);
+        }
+    } else {
+        if (!sl) warnings.push("Stop loss is required to calculate lot size.");
+        if (!riskUsd) warnings.push("Set risk sizing in Settings or enter Risk per trade.");
+    }
+
+    const allowed = enforcement === "block" ? violations.length === 0 : true;
+
+    return {
+        allowed,
+        enforcement,
+        tradePatch: {
+            ...(suggestedLotSize && !tradeLike.lotSize ? { lotSize: suggestedLotSize } : {}),
+            ...(riskInDollars && !tradeLike.riskInDollars ? { riskInDollars } : {}),
+            riskRespected: violations.length === 0,
+            riskViolations: violations,
+            riskWarnings: warnings,
+        },
+        violations,
+    };
+}
 
 // Calculate P&L, outcome, and R:R for a trade
 function calculateTradeMetrics(data: any) {
@@ -31,6 +148,26 @@ function calculateTradeMetrics(data: any) {
     }
 
     return data;
+}
+
+function buildAutoTags(data: any): string[] {
+    const out: string[] = [];
+    const instrument = typeof data?.instrument === "string" ? data.instrument.trim() : "";
+    const session = typeof data?.session === "string" ? data.session.trim() : "";
+    const setupType = typeof data?.setupType === "string" ? data.setupType.trim() : "";
+
+    if (instrument) out.push(instrument);
+    if (session) out.push(`session:${session}`);
+    if (setupType) out.push(`setup:${setupType}`);
+
+    const bias = (data?.dailyBias || data?.weeklyBias || "") as string;
+    if (bias) {
+        const b = String(bias).toLowerCase();
+        if (b.includes("range")) out.push("market:range");
+        else out.push("market:trend");
+    }
+
+    return Array.from(new Set(out.filter(Boolean)));
 }
 
 // Bulk import trades (expects an array of trade-like objects)
@@ -75,9 +212,24 @@ export async function createTrade(req: Request & { userId?: string }, res: Respo
     try {
         const parsed = tradeSchema.parse(req.body);
         const calculatedData = calculateTradeMetrics(parsed);
+
+        const risk = await applyRiskEngine(req.userId, { ...calculatedData, date: parsed.date, instrument: parsed.instrument });
+        if (!risk.allowed) {
+            return res.status(400).json({
+                error: "This trade violates your risk rules",
+                violations: risk.violations,
+            });
+        }
+
+        const tags = Array.isArray((calculatedData as any).tags) && (calculatedData as any).tags.length
+            ? (calculatedData as any).tags
+            : buildAutoTags({ ...calculatedData, instrument: parsed.instrument });
+
         const trade = await Trade.create({
             userId: req.userId,
             ...calculatedData,
+            ...risk.tradePatch,
+            tags,
             date: new Date(parsed.date),
         });
         return res.status(201).json(trade);
@@ -100,9 +252,20 @@ export async function updateTrade(req: Request & { userId?: string }, res: Respo
         const mergedData = { ...existing.toObject(), ...parsed };
         const calculatedData = calculateTradeMetrics(mergedData);
 
+        const risk = await applyRiskEngine(req.userId, calculatedData);
+        if (!risk.allowed) {
+            return res.status(400).json({
+                error: "This update violates your risk rules",
+                violations: risk.violations,
+            });
+        }
+
+        const existingTags = Array.isArray((mergedData as any).tags) ? (mergedData as any).tags : [];
+        const nextTags = existingTags.length ? Array.from(new Set(existingTags)) : buildAutoTags(mergedData);
+
         const updated = await Trade.findOneAndUpdate(
             { _id: id, userId: req.userId },
-            { ...calculatedData },
+            { ...calculatedData, ...risk.tradePatch, tags: nextTags },
             { new: true }
         );
         return res.json(updated);

@@ -45,6 +45,9 @@ export default function AITradeAnalysis() {
     const [allTradesResult, setAllTradesResult] = useState<any>(null)
     const [allTradesLoading, setAllTradesLoading] = useState(false)
 
+    const [autoResult, setAutoResult] = useState<any>(null)
+    const [autoLoading, setAutoLoading] = useState(false)
+
     useEffect(() => {
         const boot = async () => {
             try {
@@ -127,6 +130,21 @@ export default function AITradeAnalysis() {
         }
     }
 
+    const autoTradeAnalysis = async () => {
+        if (autoLoading) return
+        setAutoLoading(true)
+        setAutoResult(null)
+        try {
+            const { data } = await api.get('/analytics/auto-trade-analysis?limit=800')
+            setAutoResult(data)
+        } catch (err: any) {
+            const msg = err?.response?.data?.error || 'Failed to compute auto trade analysis'
+            alert(msg)
+        } finally {
+            setAutoLoading(false)
+        }
+    }
+
     const allTradesReport = async () => {
         if (allTradesLoading) return
         setAllTradesLoading(true)
@@ -206,6 +224,95 @@ export default function AITradeAnalysis() {
 
                                     {tradeResult.result.metrics && (
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            <AnimatedCard delay={0.05}>
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <h3 className="text-lg font-semibold">Automatic Trade Analysis</h3>
+                                                        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                                                            Data-driven insights from your trade history (best pairs/sessions/setups + patterns).
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={autoTradeAnalysis}
+                                                        disabled={autoLoading}
+                                                        className="px-4 py-2 rounded-lg bg-brand/20 border border-brand/40 text-brand hover:bg-brand/25 disabled:opacity-50"
+                                                    >
+                                                        {autoLoading ? 'Analyzing…' : 'Generate'}
+                                                    </button>
+                                                </div>
+
+                                                {autoResult ? (
+                                                    <div className="mt-6 space-y-6">
+                                                        {Array.isArray(autoResult?.patterns) && autoResult.patterns.length ? (
+                                                            <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-neutral-50/60 dark:bg-neutral-900/30">
+                                                                <div className="font-medium mb-2">Patterns</div>
+                                                                <ul className="list-disc pl-5 space-y-1 text-sm text-neutral-700 dark:text-neutral-300">
+                                                                    {autoResult.patterns.map((p: any, i: number) => (
+                                                                        <li key={p?.key || i}>{String(p?.message || '')}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        ) : null}
+
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                            <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                                                <div className="font-medium mb-2">Best Pairs</div>
+                                                                <div className="h-56">
+                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                        <BarChart data={(autoResult.bestPairs || []).slice(0, 6)}>
+                                                                            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                                                                            <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
+                                                                            <YAxis tick={{ fontSize: 10 }} />
+                                                                            <Tooltip />
+                                                                            <Bar dataKey="netPnl" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                                                                        </BarChart>
+                                                                    </ResponsiveContainer>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                                                <div className="font-medium mb-2">Best Sessions</div>
+                                                                <div className="h-56">
+                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                        <BarChart data={(autoResult.bestSessions || []).slice(0, 5)}>
+                                                                            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                                                                            <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
+                                                                            <YAxis tick={{ fontSize: 10 }} />
+                                                                            <Tooltip />
+                                                                            <Bar dataKey="winRate" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                                                                        </BarChart>
+                                                                    </ResponsiveContainer>
+                                                                </div>
+                                                                <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Win rate (0–1)</div>
+                                                            </div>
+
+                                                            <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                                                <div className="font-medium mb-2">Best Setups</div>
+                                                                <div className="h-56">
+                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                        <BarChart data={(autoResult.bestSetups || []).slice(0, 6)}>
+                                                                            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                                                                            <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
+                                                                            <YAxis tick={{ fontSize: 10 }} />
+                                                                            <Tooltip />
+                                                                            <Bar dataKey="netPnl" fill="#a855f7" radius={[6, 6, 0, 0]} />
+                                                                        </BarChart>
+                                                                    </ResponsiveContainer>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                                                            Trades analyzed: {autoResult.tradesAnalyzed ?? '-'}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
+                                                        Click Generate to analyze your history.
+                                                    </div>
+                                                )}
+                                            </AnimatedCard>
+
                                             <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
                                                 <div className="text-neutral-400 text-xs mb-1">Planned RR</div>
                                                 <div className="text-lg font-semibold tabular-nums">{formatMetric(tradeResult.result.metrics.plannedRR)}</div>

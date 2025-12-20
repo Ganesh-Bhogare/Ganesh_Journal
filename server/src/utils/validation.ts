@@ -11,6 +11,27 @@ export const loginSchema = z.object({
     password: z.string().min(6),
 });
 
+export const userPreferencesSchema = z.object({
+    theme: z.enum(["dark", "light"]).optional(),
+
+    // Legacy
+    riskPerTrade: z.coerce.number().positive().optional(),
+
+    // Sizing
+    accountBalance: z.coerce.number().positive().optional(),
+    riskMode: z.enum(["percent", "fixed"]).optional(),
+    riskPercent: z.coerce.number().positive().optional(),
+    riskAmount: z.coerce.number().positive().optional(),
+    pipValuePerLot: z.coerce.number().positive().optional(),
+
+    // Guardrails
+    maxDailyLossAmount: z.coerce.number().positive().optional(),
+    maxDailyLossPercent: z.coerce.number().positive().optional(),
+    maxTradesPerDay: z.coerce.number().int().positive().optional(),
+    stopAfterLosses: z.coerce.number().int().positive().optional(),
+    enforcement: z.enum(["warn", "block"]).optional(),
+});
+
 export const tradeSchema = z.object({
     // Basic info
     date: z.string(), // ISO date
@@ -88,3 +109,4 @@ export const tradeSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type TradeInput = z.infer<typeof tradeSchema>;
+export type UserPreferencesInput = z.infer<typeof userPreferencesSchema>;

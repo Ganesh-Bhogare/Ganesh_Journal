@@ -8,6 +8,8 @@ import authRoutes from "./routes/auth";
 import tradeRoutes from "./routes/trades";
 import analyticsRoutes from "./routes/analytics";
 import aiRoutes from "./routes/ai";
+import userRoutes from "./routes/user";
+import riskRoutes from "./routes/risk";
 import { errorHandler } from "./middleware/errorHandler";
 
 // Create and configure Express app
@@ -43,6 +45,8 @@ export function createApp() {
 
     // Routes
     app.use("/api/auth", authRoutes);
+    app.use("/api/user", userRoutes);
+    app.use("/api/risk", riskRoutes);
     app.use("/api/trades", tradeRoutes);
     app.use("/api/analytics", analyticsRoutes);
     app.use("/api/ai", aiRoutes);

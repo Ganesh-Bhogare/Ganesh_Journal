@@ -12,6 +12,17 @@ type InsightItem = {
     rate: number;
 };
 
+type AutoBucket = {
+    key: string;
+    label: string;
+    trades: number;
+    wins: number;
+    losses: number;
+    breakeven: number;
+    winRate: number;
+    netPnl: number;
+};
+
 function safeNumber(v: any) {
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) ? n : 0;
@@ -20,6 +31,73 @@ function safeNumber(v: any) {
 function rate(count: number, total: number) {
     if (!total) return 0;
     return count / total;
+}
+
+function bucketize(trades: any[], getKey: (t: any) => string | undefined, labelFallback = "Unknown") {
+    const map: Record<string, AutoBucket> = {};
+    for (const t of trades) {
+        const rawKey = getKey(t) || labelFallback;
+        const key = String(rawKey);
+        if (!map[key]) {
+            map[key] = {
+                key,
+                label: key,
+                trades: 0,
+                wins: 0,
+                losses: 0,
+                breakeven: 0,
+                winRate: 0,
+                netPnl: 0,
+            };
+        }
+
+        const pnl = safeNumber(t.pnl);
+        map[key].trades += 1;
+        map[key].netPnl += pnl;
+
+        const outcome = t.outcome;
+        const derived = outcome ? String(outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
+        if (derived === "win") map[key].wins += 1;
+        else if (derived === "loss") map[key].losses += 1;
+        else map[key].breakeven += 1;
+    }
+
+    const buckets = Object.values(map).map((b) => ({
+        ...b,
+        winRate: b.trades ? b.wins / b.trades : 0,
+    }));
+
+    // Sort: prioritize more trades, then win rate, then net pnl
+    buckets.sort((a, b) => (b.trades - a.trades) || (b.winRate - a.winRate) || (b.netPnl - a.netPnl));
+    return buckets;
+}
+
+function computeWinRateAfterLossStreak(tradesAsc: any[], streakLen: number) {
+    let streak = 0;
+    const after: any[] = [];
+
+    for (const t of tradesAsc) {
+        const pnl = safeNumber(t.pnl);
+        const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
+
+        if (streak >= streakLen) {
+            after.push(t);
+        }
+
+        if (outcome === "loss") streak += 1;
+        else streak = 0;
+    }
+
+    const total = after.length;
+    const wins = after.reduce((sum, t) => {
+        const pnl = safeNumber(t.pnl);
+        const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
+        return sum + (outcome === "win" ? 1 : 0);
+    }, 0);
+    return {
+        sample: total,
+        winRate: total ? wins / total : 0,
+    };
 }
 
 // Computes key performance metrics for the current user
@@ -316,6 +394,72 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
         });
     } catch (_err) {
         return res.status(500).json({ error: "Failed to compute AI insights" });
+    }
+}
+
+// Automatic trade analysis (rule-based, no LLM required)
+export async function autoTradeAnalysis(req: Request & { userId?: string }, res: Response) {
+    try {
+        const limit = Math.max(50, Math.min(2000, parseInt((req.query.limit as string) || "800", 10) || 800));
+        const from = typeof req.query.from === "string" ? req.query.from : undefined;
+        const to = typeof req.query.to === "string" ? req.query.to : undefined;
+
+        const filter: any = { userId: req.userId };
+        if (from || to) {
+            filter.date = {};
+            if (from) filter.date.$gte = new Date(from);
+            if (to) filter.date.$lte = new Date(to);
+        }
+
+        const trades = await Trade.find(filter)
+            .sort({ date: 1 })
+            .limit(limit)
+            .select("date instrument session setupType outcome pnl");
+
+        if (trades.length === 0) {
+            return res.json({
+                tradesAnalyzed: 0,
+                bestPairs: [],
+                bestSessions: [],
+                bestSetups: [],
+                patterns: [],
+            });
+        }
+
+        const byPair = bucketize(trades as any[], (t) => t.instrument);
+        const bySession = bucketize(trades as any[], (t) => t.session);
+        const bySetup = bucketize(trades as any[], (t) => t.setupType);
+
+        // Pattern: win rate after 3 consecutive losses
+        const total = trades.length;
+        const overallWins = (trades as any[]).reduce((sum, t) => {
+            const pnl = safeNumber(t.pnl);
+            const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
+            return sum + (outcome === "win" ? 1 : 0);
+        }, 0);
+        const overallWinRate = total ? overallWins / total : 0;
+
+        const after3 = computeWinRateAfterLossStreak(trades as any[], 3);
+        const patterns: Array<{ key: string; message: string; sample: number }> = [];
+        if (after3.sample >= 10) {
+            const delta = after3.winRate - overallWinRate;
+            const direction = delta < 0 ? "drops" : "improves";
+            patterns.push({
+                key: "win_rate_after_3_losses",
+                sample: after3.sample,
+                message: `Your win rate ${direction} after 3 consecutive losses (overall ${(overallWinRate * 100).toFixed(0)}% vs after-3-loss ${(after3.winRate * 100).toFixed(0)}%).`,
+            });
+        }
+
+        return res.json({
+            tradesAnalyzed: trades.length,
+            bestPairs: byPair.slice(0, 8),
+            bestSessions: bySession.slice(0, 6),
+            bestSetups: bySetup.slice(0, 8),
+            patterns,
+        });
+    } catch (_err) {
+        return res.status(500).json({ error: "Failed to compute auto trade analysis" });
     }
 }
 
