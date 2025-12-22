@@ -350,89 +350,89 @@ export default function AITradeAnalysis() {
                 </AnimatedCard>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <AnimatedCard delay={0.1}>
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                        <h3 className="text-lg font-semibold">Weekly AI Review</h3>
-                        <button
-                            onClick={weeklyReview}
-                            className="px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
-                        >
-                            {weeklyLoading ? 'Reviewing...' : 'Weekly AI Review'}
-                        </button>
+            <AnimatedCard delay={0.1}>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <h3 className="text-lg font-semibold">Weekly AI Review</h3>
+                    <button
+                        onClick={weeklyReview}
+                        className="px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
+                    >
+                        {weeklyLoading ? 'Reviewing...' : 'Weekly AI Review'}
+                    </button>
+                </div>
+
+                {weeklyResult?.result ? (
+                    <div className="space-y-3">
+                        {!weeklyResult.ok && (
+                            <div className="text-amber-400 text-sm">GPT response didn’t match strict format perfectly. Showing best-effort output.</div>
+                        )}
+                        {weeklyResult.result.ruleToEnforce ? (
+                            <>
+                                {weeklyResult.stats?.avoidableVsValidLosses && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                            <div className="text-neutral-400 text-xs mb-1">Avoidable loss rate</div>
+                                            <div className="text-2xl font-bold">{weeklyResult.stats.avoidableVsValidLosses.avoidableLossRatePct}%</div>
+                                        </div>
+                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                            <div className="text-neutral-400 text-xs mb-1">Avg R (rules followed vs broken)</div>
+                                            <div className="text-sm text-neutral-200">Followed: <span className="font-semibold">{weeklyResult.stats.avgR?.ruleFollowed}</span> • Broken: <span className="font-semibold">{weeklyResult.stats.avgR?.ruleBroken}</span></div>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                    <div className="text-neutral-400 text-xs mb-1">Rule to enforce</div>
+                                    <div className="text-lg font-semibold">{weeklyResult.result.ruleToEnforce}</div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Most repeated mistake</div>
+                                        <div className="text-sm text-neutral-200 whitespace-pre-wrap">{weeklyResult.result.mostRepeatedMistake}</div>
+                                    </div>
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Strongest edge</div>
+                                        <div className="text-sm text-neutral-200 whitespace-pre-wrap">{weeklyResult.result.strongestEdge}</div>
+                                    </div>
+                                </div>
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                    <div className="text-neutral-400 text-xs mb-2">Strict rules for next week</div>
+                                    <div className="space-y-1 text-sm text-neutral-200">
+                                        {(weeklyResult.result.strictRulesForNextWeek || []).map((r: string, i: number) => (
+                                            <div key={i}>• {r}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Best Session</div>
+                                        <div className="text-lg font-semibold">{weeklyResult.result.bestSession}</div>
+                                    </div>
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Worst Session</div>
+                                        <div className="text-lg font-semibold">{weeklyResult.result.worstSession}</div>
+                                    </div>
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Best Setup</div>
+                                        <div className="text-lg font-semibold">{weeklyResult.result.bestSetup}</div>
+                                    </div>
+                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
+                                        <div className="text-neutral-400 text-xs mb-1">Most Repeated Mistake</div>
+                                        <div className="text-lg font-semibold">{weeklyResult.result.mostRepeatedMistake}</div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
+                ) : (
+                    <div className="text-neutral-500 text-sm">Click “Weekly AI Review” to get a coaching summary for the last 7 days.</div>
+                )}
+            </AnimatedCard>
 
-                    {weeklyResult?.result ? (
-                        <div className="space-y-3">
-                            {!weeklyResult.ok && (
-                                <div className="text-amber-400 text-sm">GPT response didn’t match strict format perfectly. Showing best-effort output.</div>
-                            )}
-                            {weeklyResult.result.ruleToEnforce ? (
-                                <>
-                                    {weeklyResult.stats?.avoidableVsValidLosses && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                                <div className="text-neutral-400 text-xs mb-1">Avoidable loss rate</div>
-                                                <div className="text-2xl font-bold">{weeklyResult.stats.avoidableVsValidLosses.avoidableLossRatePct}%</div>
-                                            </div>
-                                            <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                                <div className="text-neutral-400 text-xs mb-1">Avg R (rules followed vs broken)</div>
-                                                <div className="text-sm text-neutral-200">Followed: <span className="font-semibold">{weeklyResult.stats.avgR?.ruleFollowed}</span> • Broken: <span className="font-semibold">{weeklyResult.stats.avgR?.ruleBroken}</span></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                        <div className="text-neutral-400 text-xs mb-1">Rule to enforce</div>
-                                        <div className="text-lg font-semibold">{weeklyResult.result.ruleToEnforce}</div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Most repeated mistake</div>
-                                            <div className="text-sm text-neutral-200 whitespace-pre-wrap">{weeklyResult.result.mostRepeatedMistake}</div>
-                                        </div>
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Strongest edge</div>
-                                            <div className="text-sm text-neutral-200 whitespace-pre-wrap">{weeklyResult.result.strongestEdge}</div>
-                                        </div>
-                                    </div>
-                                    <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                        <div className="text-neutral-400 text-xs mb-2">Strict rules for next week</div>
-                                        <div className="space-y-1 text-sm text-neutral-200">
-                                            {(weeklyResult.result.strictRulesForNextWeek || []).map((r: string, i: number) => (
-                                                <div key={i}>• {r}</div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Best Session</div>
-                                            <div className="text-lg font-semibold">{weeklyResult.result.bestSession}</div>
-                                        </div>
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Worst Session</div>
-                                            <div className="text-lg font-semibold">{weeklyResult.result.worstSession}</div>
-                                        </div>
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Best Setup</div>
-                                            <div className="text-lg font-semibold">{weeklyResult.result.bestSetup}</div>
-                                        </div>
-                                        <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                            <div className="text-neutral-400 text-xs mb-1">Most Repeated Mistake</div>
-                                            <div className="text-lg font-semibold">{weeklyResult.result.mostRepeatedMistake}</div>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="text-neutral-500 text-sm">Click “Weekly AI Review” to get a coaching summary for the last 7 days.</div>
-                    )}
-                </AnimatedCard>
-
-                <AnimatedCard delay={0.15} className="lg:col-span-2">
+            <div className="grid grid-cols-1 gap-6">
+                <AnimatedCard delay={0.15}>
                     <div className="flex items-center justify-between gap-3 mb-4">
                         <h3 className="text-lg font-semibold">All Trades Summary Report</h3>
                         <button
