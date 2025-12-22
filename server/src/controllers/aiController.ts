@@ -59,8 +59,8 @@ const AnalyzeTradeResult = z.object({
     verdict: z.enum(["avoidable_loss", "valid_loss", "valid_win", "avoidable_win"]),
     primaryFailure: z.string().min(1),
     avoidable: z.boolean(),
-    evidence: z.array(z.string()).min(1),
-    deviations: z.array(z.string()).min(1),
+    evidence: z.array(z.string()).min(2).max(8), // Require at least 2 detailed evidence points
+    deviations: z.array(z.string()).min(1).max(8), // Allow more deviations
     metrics: z.object({
         plannedRR: z.string(),
         achievedR: z.string(),
@@ -68,8 +68,8 @@ const AnalyzeTradeResult = z.object({
         mae: z.string(),
         mfe: z.string(),
     }),
-    ruleToAdd: z.string().min(1),
-    nextTimeAction: z.string().min(1),
+    ruleToAdd: z.string().min(10), // Require more detailed rule
+    nextTimeAction: z.string().min(10), // Require more detailed action
 });
 
 const WeeklyReviewCoachResult = z.object({
@@ -346,20 +346,29 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
                         text:
                             "COACH MODE (STRICT): Compare planned trade vs executed trade.\n" +
                             "Rules:\n" +
+                            "- CRITICALLY READ trader's notes field - this is their own assessment and MUST be addressed in your analysis.\n" +
                             "- ANALYZE the screenshots (if provided) for entry quality, chart structure, and execution evidence.\n" +
-                            "- READ the notes field for trader's self-assessment and incorporate relevant observations.\n" +
+                            "- Quote or reference specific parts of the notes when relevant to show you read them.\n" +
                             "- Use SPECIFIC evidence with numbers and field names (e.g. entryPrice, stopLoss, takeProfit, plannedRR, achievedR).\n" +
                             "- Reference what you see in the charts when relevant (e.g. 'Screenshot shows poor entry timing').\n" +
+                            "- Give DETAILED, specific feedback - not generic advice. Be thorough in evidence and deviations arrays.\n" +
                             "- If data is missing, write 'DATA_MISSING: <field>' in evidence and continue.\n" +
                             "- Do NOT output null anywhere; use 'N/A' instead.\n" +
                             "- Verdict must be one of: avoidable_loss, valid_loss, valid_win, avoidable_win\n\n" +
                             "Return JSON ONLY with this exact shape:\n" +
                             JSON.stringify({
                                 verdict: "avoidable_loss",
-                                primaryFailure: "",
+                                primaryFailure: "Specific reason for failure",
                                 avoidable: true,
-                                evidence: [""],
-                                deviations: [""],
+                                evidence: [
+                                    "Trader notes mention: [quote from notes]",
+                                    "Risk metrics show: plannedRR=2.5, achievedR=-1, indicating...",
+                                    "Additional specific observation from data or chart"
+                                ],
+                                deviations: [
+                                    "Specific deviation from plan with field reference",
+                                    "Another clear deviation observed"
+                                ],
                                 metrics: {
                                     plannedRR: "",
                                     achievedR: "",
@@ -367,8 +376,8 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
                                     mae: "N/A",
                                     mfe: "N/A",
                                 },
-                                ruleToAdd: "",
-                                nextTimeAction: "",
+                                ruleToAdd: "Detailed, actionable rule based on this specific mistake",
+                                nextTimeAction: "Clear, specific action to take before next similar setup",
                             }) +
                             "\n\nTrade JSON:\n" +
                             JSON.stringify(textPayload),
