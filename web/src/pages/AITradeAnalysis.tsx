@@ -19,8 +19,9 @@ function formatMetric(v: any, decimals = 2) {
     const s = String(v)
     const n = typeof v === 'number' ? v : Number(s)
     if (Number.isFinite(n)) {
-        // Trim trailing zeros while keeping readability
-        const fixed = n.toFixed(decimals)
+        // Round to avoid floating point precision issues, then format
+        const rounded = Math.round(n * Math.pow(10, decimals)) / Math.pow(10, decimals)
+        const fixed = rounded.toFixed(decimals)
         return fixed.replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1')
     }
     return s
@@ -79,7 +80,7 @@ export default function AITradeAnalysis() {
         setTradeResult(null)
         try {
             // Keep OpenAI usage minimal by default (images increase cost)
-            const { data } = await api.post('/ai/analyze-trade', { tradeId: selectedTradeId, includeImages: false })
+            const { data } = await api.post('/ai/analyze-trade', { tradeId: selectedTradeId, includeImages: true })
             setTradeResult(data)
         } catch (err: any) {
             const msg = err?.response?.data?.error || 'Failed to analyze trade'
@@ -103,7 +104,7 @@ export default function AITradeAnalysis() {
                 tradeId: selectedTradeId,
                 message: text,
                 history: nextHistory.slice(-12),
-                includeImages: false,
+                includeImages: true,
             })
 
             const reply = data?.result?.reply || (typeof data?.result === 'string' ? data.result : '')
@@ -121,7 +122,7 @@ export default function AITradeAnalysis() {
         setWeeklyLoading(true)
         setWeeklyResult(null)
         try {
-            const { data } = await api.post('/ai/weekly-review', { includeImages: false })
+            const { data } = await api.post('/ai/weekly-review', { includeImages: true })
             setWeeklyResult(data)
         } catch (err: any) {
             const msg = err?.response?.data?.error || 'Failed to generate weekly review'
@@ -151,7 +152,7 @@ export default function AITradeAnalysis() {
         setAllTradesLoading(true)
         setAllTradesResult(null)
         try {
-            const { data } = await api.post('/ai/all-trades-report', { includeImages: false })
+            const { data } = await api.post('/ai/all-trades-report', { includeImages: true })
             setAllTradesResult(data)
         } catch (err: any) {
             const msg = err?.response?.data?.error || 'Failed to generate all-trades report'

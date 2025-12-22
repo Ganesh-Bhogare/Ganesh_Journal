@@ -84,6 +84,12 @@ function safeNumber(v: any) {
     return Number.isFinite(n) ? n : undefined;
 }
 
+function roundPrice(v: any, decimals = 5) {
+    const n = safeNumber(v);
+    if (n === undefined) return undefined;
+    return Math.round(n * Math.pow(10, decimals)) / Math.pow(10, decimals);
+}
+
 function fmtNum(v: any, decimals = 2) {
     const n = safeNumber(v);
     if (n === undefined) return "N/A";
@@ -116,11 +122,14 @@ function computePlannedRR(t: any) {
     const risk = Math.abs(entry - sl);
     const reward = Math.abs(tp - entry);
     if (!risk) return undefined;
-    return reward / risk;
+    const rr = reward / risk;
+    return Math.round(rr * 100) / 100; // Round to 2 decimal places
 }
 
 function computeAchievedR(t: any) {
-    if (typeof t.rMultiple === "number" && Number.isFinite(t.rMultiple)) return t.rMultiple;
+    if (typeof t.rMultiple === "number" && Number.isFinite(t.rMultiple)) {
+        return Math.round(t.rMultiple * 100) / 100; // Round to 2 decimal places
+    }
     const entry = safeNumber(t.entryPrice);
     const sl = safeNumber(t.stopLoss);
     const exit = safeNumber(t.exitPrice);
@@ -131,7 +140,8 @@ function computeAchievedR(t: any) {
     const rewardAbs = Math.abs(exit - entry);
     const win = direction === "long" ? exit > entry : exit < entry;
     const r = rewardAbs / risk;
-    return win ? r : -r;
+    const rounded = Math.round(r * 100) / 100; // Round to 2 decimal places
+    return win ? rounded : -rounded;
 }
 
 function guessMime(filePath: string) {
@@ -166,8 +176,8 @@ function tradeToPromptJson(t: any) {
         pdArrays: Array.isArray(t.pdArrays) ? t.pdArrays : [],
         entryTimeframe: t.entryTimeframe,
         entryConfirmation: t.entryConfirmation,
-        mae: t.mae,
-        mfe: t.mfe,
+        mae: roundPrice(t.mae, 2),
+        mfe: roundPrice(t.mfe, 2),
         htfLevelUsed: t.htfLevelUsed,
         ltfConfirmationQuality: t.ltfConfirmationQuality,
         riskPerTrade: t.riskPerTrade,
@@ -187,10 +197,10 @@ function tradeToPromptJson(t: any) {
             ruleBreakCount: t.ruleBreakCount,
         },
         prices: {
-            entryPrice: t.entryPrice,
-            stopLoss: t.stopLoss,
-            takeProfit: t.takeProfit,
-            exitPrice: t.exitPrice,
+            entryPrice: roundPrice(t.entryPrice),
+            stopLoss: roundPrice(t.stopLoss),
+            takeProfit: roundPrice(t.takeProfit),
+            exitPrice: roundPrice(t.exitPrice),
         },
         pnl: t.pnl,
         date: t.date,
@@ -336,7 +346,10 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
                         text:
                             "COACH MODE (STRICT): Compare planned trade vs executed trade.\n" +
                             "Rules:\n" +
+                            "- ANALYZE the screenshots (if provided) for entry quality, chart structure, and execution evidence.\n" +
+                            "- READ the notes field for trader's self-assessment and incorporate relevant observations.\n" +
                             "- Use SPECIFIC evidence with numbers and field names (e.g. entryPrice, stopLoss, takeProfit, plannedRR, achievedR).\n" +
+                            "- Reference what you see in the charts when relevant (e.g. 'Screenshot shows poor entry timing').\n" +
                             "- If data is missing, write 'DATA_MISSING: <field>' in evidence and continue.\n" +
                             "- Do NOT output null anywhere; use 'N/A' instead.\n" +
                             "- Verdict must be one of: avoidable_loss, valid_loss, valid_win, avoidable_win\n\n" +
@@ -437,7 +450,7 @@ export async function chatTrade(req: Request & { userId?: string }, res: Respons
             {
                 role: "system",
                 content:
-                    "You are a strict ICT trading execution coach. You MUST NOT give buy/sell signals or predictions. You answer ONLY about execution quality based on the provided Trade JSON and user questions. Be direct, specific, and cite field names/numbers (e.g., entryPrice, stopLoss, plannedRR, achievedR, mae/mfe). If data is missing, say DATA_MISSING:<field>. Output STRICT JSON only: {reply: string}.",
+                    "You are a strict ICT trading execution coach. You MUST NOT give buy/sell signals or predictions. You answer ONLY about execution quality based on the provided Trade JSON, screenshots (if provided), and user questions. Be direct, specific, and cite field names/numbers (e.g., entryPrice, stopLoss, plannedRR, achievedR, mae/mfe). Reference chart evidence from screenshots when relevant. If data is missing, say DATA_MISSING:<field>. Output STRICT JSON only: {reply: string}.",
             },
             {
                 role: "user",
@@ -535,7 +548,8 @@ export async function allTradesReport(req: Request & { userId?: string }, res: R
                         text:
                             "COACH MODE (ALL TRADES): Summarize the journal using ONLY this data.\n" +
                             "Rules:\n" +
-                            "- Use SPECIFIC evidence referencing fields (plannedRR, achievedR, mae/mfe, rules.*) and the computed stats.\n" +
+                            "- Use SPECIFIC evidence referencing fields (plannedRR, achievedR, mae/mfe, rules.*, notes) and the computed stats.\n" +
+                            "- Consider trader notes for patterns in self-awareness and emotional discipline.\n" +
                             "- If data is missing, include DATA_MISSING:<field> in overview.\n" +
                             "- Do NOT output null anywhere; use 'N/A' instead.\n\n" +
                             "Return JSON ONLY with this exact shape:\n" +
@@ -718,6 +732,7 @@ export async function weeklyReview(req: Request & { userId?: string }, res: Resp
                             "WEEKLY COACHING MODE (STRICT):\n" +
                             "- Your job is to enforce rules, not to teach theory.\n" +
                             "- Use the provided STATS for your conclusions.\n" +
+                            "- Consider trader notes from each trade for patterns in self-awareness.\n" +
                             "- Output NO nulls; use 'N/A'.\n\n" +
                             "Return JSON ONLY with this exact shape:\n" +
                             JSON.stringify({
