@@ -373,9 +373,10 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
         });
 
         const content = completion.choices?.[0]?.message?.content || "{}";
+        const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
-                return normalizeNullsDeep(JSON.parse(content));
+                return normalizeNullsDeep(JSON.parse(cleanContent));
             } catch {
                 return { raw: content };
             }
@@ -466,9 +467,10 @@ export async function chatTrade(req: Request & { userId?: string }, res: Respons
         });
 
         const content = completion.choices?.[0]?.message?.content || "{}";
+        const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
-                return normalizeNullsDeep(JSON.parse(content));
+                return normalizeNullsDeep(JSON.parse(cleanContent));
             } catch {
                 return { reply: String(content || "").trim() };
             }
@@ -561,9 +563,10 @@ export async function allTradesReport(req: Request & { userId?: string }, res: R
         });
 
         const content = completion.choices?.[0]?.message?.content || "{}";
+        const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
-                return normalizeNullsDeep(JSON.parse(content));
+                return normalizeNullsDeep(JSON.parse(cleanContent));
             } catch {
                 return { raw: content };
             }
@@ -589,8 +592,9 @@ export async function allTradesReport(req: Request & { userId?: string }, res: R
             result: validated.data,
         });
     } catch (err: any) {
+        console.error("All-trades report error:", err);
         if (err?.name === "ZodError") return res.status(400).json({ error: err.errors });
-        return res.status(500).json({ error: "Failed to compute all-trades report", detail: err?.message || String(err) });
+        return res.status(500).json({ error: "Failed to compute all-trades report", detail: err?.message || String(err), stack: err?.stack });
     }
 }
 
@@ -739,9 +743,10 @@ export async function weeklyReview(req: Request & { userId?: string }, res: Resp
         });
 
         const content = completion.choices?.[0]?.message?.content || "{}";
+        const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
-                return normalizeNullsDeep(JSON.parse(content));
+                return normalizeNullsDeep(JSON.parse(cleanContent));
             } catch {
                 return { raw: content };
             }

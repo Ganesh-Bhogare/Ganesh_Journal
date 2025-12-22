@@ -23,6 +23,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "openai": "^4.104.0",
+    "rss-parser": "^3.13.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

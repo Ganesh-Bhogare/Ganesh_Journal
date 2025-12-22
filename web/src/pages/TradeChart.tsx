@@ -315,6 +315,7 @@ export default function TradeChart() {
     const chartScreenshotUrl = fileUrl(trade?.chartScreenshot)
     const entryScreenshotUrl = fileUrl(trade?.entryScreenshot)
 
+
     const useEntryScreenshotAsChart = async () => {
         if (!tradeId) return
         try {
@@ -448,6 +449,7 @@ export default function TradeChart() {
 
             {loading && <div className="text-sm text-neutral-500">Loading…</div>}
             {!loading && !trade && <div className="text-sm text-neutral-500">Trade not found or you don’t have access.</div>}
+
         </div>
     )
 }
