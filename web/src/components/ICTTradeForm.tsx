@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
-import { X, Upload, TrendingUp, TrendingDown, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { X, TrendingUp, TrendingDown, AlertCircle, CheckCircle2 } from 'lucide-react'
 import GradientButton from './GradientButton'
+import TradingViewEmbed from './TradingViewEmbed'
 import { api } from '../lib/api'
+import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
 
 interface ICTTradeFormProps {
     onClose: () => void
@@ -10,7 +12,17 @@ interface ICTTradeFormProps {
     trade?: any
 }
 
-const FOREX_PAIRS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'EURJPY', 'GBPJPY', 'EURGBP']
+const MARKET_OPTIONS = ['Forex', 'Crypto', 'Indian Equity', 'Indian Futures', 'Indian Options', 'Commodities', 'Indices', 'Other']
+const INSTRUMENT_LIBRARY: Record<string, string[]> = {
+    Forex: ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'EURJPY', 'GBPJPY', 'EURGBP'],
+    Crypto: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT'],
+    'Indian Equity': ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ITC'],
+    'Indian Futures': ['NIFTY FUT', 'BANKNIFTY FUT', 'FINNIFTY FUT', 'MIDCPNIFTY FUT'],
+    'Indian Options': ['NIFTY CE', 'NIFTY PE', 'BANKNIFTY CE', 'BANKNIFTY PE'],
+    Commodities: ['XAUUSD', 'XAGUSD', 'CRUDEOIL', 'NATGAS'],
+    Indices: ['NIFTY50', 'BANKNIFTY', 'SENSEX', 'NASDAQ', 'SPX500'],
+    Other: []
+}
 const SESSIONS = ['Asia', 'London', 'New York']
 const KILLZONES = ['London Open', 'NY AM', 'NY PM']
 const HTF_BIAS_OPTIONS = ['Bullish', 'Bearish', 'Range']
@@ -23,6 +35,7 @@ const SETUP_TYPES = [
     'Power of 3 (AMD)',
     'Breaker Block'
 ]
+const NON_ICT_STRATEGIES = ['Breakout', 'Trend Following', 'Mean Reversion', 'Scalping', 'Swing Trading', 'News Trading', 'Options Momentum', 'Arbitrage', 'Custom']
 const PD_ARRAYS = [
     'Daily High/Low',
     'Weekly High/Low',
@@ -33,20 +46,21 @@ const PD_ARRAYS = [
 const ENTRY_TIMEFRAMES = ['1m', '3m', '5m']
 const ENTRY_CONFIRMATIONS = ['MSS', 'Displacement', 'FVG Tap']
 const EMOTIONAL_STATES = ['Calm', 'FOMO', 'Revenge', 'Hesitant']
+const CHART_TIMEFRAME_OPTIONS = ['1', '3', '5', '15', '30', '60', '240', 'D']
 
 const formSectionStyle = {
     marginBottom: '32px',
     padding: '24px',
-    backgroundColor: '#1f1f1f',
+    backgroundColor: '#0f172a',
     borderRadius: '12px',
-    border: '1px solid #2a2a2a'
+    border: '1px solid #bfdbfe'
 }
 
 const sectionTitleStyle = {
     fontSize: '18px',
     fontWeight: '600',
     marginBottom: '20px',
-    color: '#f97316',
+    color: '#2563eb',
     display: 'flex',
     alignItems: 'center',
     gap: '8px'
@@ -55,10 +69,10 @@ const sectionTitleStyle = {
 const inputStyle = {
     width: '100%',
     padding: '10px 14px',
-    backgroundColor: '#262626',
-    border: '1px solid #404040',
+    backgroundColor: '#0f172a',
+    border: '1px solid #bfdbfe',
     borderRadius: '8px',
-    color: '#fff',
+    color: '#e2e8f0',
     fontSize: '14px',
     outline: 'none'
 }
@@ -68,7 +82,7 @@ const labelStyle = {
     fontSize: '13px',
     fontWeight: '500',
     marginBottom: '8px',
-    color: '#d1d1d1'
+    color: '#bfdbfe'
 }
 
 export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeFormProps) {
@@ -79,6 +93,8 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
     const [formData, setFormData] = useState({
         // Basic Info
         date: trade?.date ? new Date(trade.date).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+        market: trade?.market || 'Forex',
+        strategyStyle: trade?.strategyStyle || (trade?.setupType ? 'ICT' : 'Non-ICT'),
         instrument: trade?.instrument || 'XAUUSD',
         direction: trade?.direction || 'long',
 
@@ -92,6 +108,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
 
         // Setup Type (ONLY ONE)
         setupType: trade?.setupType || '',
+        strategyName: trade?.strategyName || '',
 
         // PD Arrays (Multiple)
         pdArrays: trade?.pdArrays || [],
@@ -130,27 +147,70 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         // Notes
         notes: trade?.notes || ''
     })
+    const [chartSymbol, setChartSymbol] = useState(
+        trade?.chartConfig?.symbol || resolveTradingViewSymbol(trade?.market || 'Forex', trade?.instrument || 'XAUUSD')
+    )
+    const [chartTimeframe, setChartTimeframe] = useState(
+        trade?.chartConfig?.timeframe || toTradingViewInterval(trade?.entryTimeframe || '5m')
+    )
+    const [chartTimeframes, setChartTimeframes] = useState<string[]>(
+        Array.isArray(trade?.chartConfig?.timeframes) && trade.chartConfig.timeframes.length
+            ? trade.chartConfig.timeframes.slice(0, 3)
+            : ['5', '15', '60']
+    )
 
-    const [screenshots, setScreenshots] = useState({
-        htf: null as File | null,
-        entry: null as File | null,
-        postTrade: null as File | null
-    })
+    const entryNum = Number(formData.entryPrice)
+    const stopNum = Number(formData.stopLoss)
+    const targetNum = Number(formData.takeProfit)
+    const risk = Number.isFinite(entryNum) && Number.isFinite(stopNum) ? Math.abs(entryNum - stopNum) : 0
+    const reward = Number.isFinite(entryNum) && Number.isFinite(targetNum) ? Math.abs(targetNum - entryNum) : 0
+    const rrPreview = risk > 0 ? reward / risk : 0
+
+    const copyLevels = async () => {
+        const payload = [
+            `Symbol: ${chartSymbol}`,
+            `Direction: ${String(formData.direction || '').toUpperCase()}`,
+            `Entry: ${formData.entryPrice || '-'}`,
+            `Stop Loss: ${formData.stopLoss || '-'}`,
+            `Take Profit: ${formData.takeProfit || '-'}`,
+            `Trade Time (UTC): ${formData.entryTime ? new Date(formData.entryTime).toISOString() : '-'}`,
+            `Entry TF: ${formData.entryTimeframe || '-'}`,
+            `RR: ${rrPreview > 0 ? rrPreview.toFixed(2) : '-'}`
+        ].join('\n')
+
+        try {
+            await navigator.clipboard.writeText(payload)
+        } catch (err) {
+            console.error('Failed to copy levels', err)
+        }
+    }
+
+    useEffect(() => {
+        const next = resolveTradingViewSymbol(formData.market, formData.instrument)
+        setChartSymbol(next)
+    }, [formData.market, formData.instrument])
 
     const validateStep = (currentStep: number): boolean => {
         const newErrors: string[] = []
 
         if (currentStep === 1) {
-            if (!formData.instrument) newErrors.push('Pair is required')
-            if (!formData.session) newErrors.push('Session is required')
-            if (!formData.weeklyBias) newErrors.push('Weekly Bias is required')
-            if (!formData.dailyBias) newErrors.push('Daily Bias is required')
-            if (!formData.drawOnLiquidity) newErrors.push('Draw on Liquidity is required')
+            if (!formData.market) newErrors.push('Market is required')
+            if (!formData.instrument) newErrors.push('Instrument is required')
+            if (formData.strategyStyle === 'ICT') {
+                if (!formData.session) newErrors.push('Session is required for ICT style')
+                if (!formData.weeklyBias) newErrors.push('Weekly Bias is required for ICT style')
+                if (!formData.dailyBias) newErrors.push('Daily Bias is required for ICT style')
+                if (!formData.drawOnLiquidity) newErrors.push('Draw on Liquidity is required for ICT style')
+            }
         }
 
         if (currentStep === 2) {
-            if (!formData.setupType) newErrors.push('Setup Type is required (select ONE only)')
-            if (formData.pdArrays.length === 0) newErrors.push('Select at least one PD Array')
+            if (formData.strategyStyle === 'ICT') {
+                if (!formData.setupType) newErrors.push('Setup Type is required (select ONE only)')
+                if (formData.pdArrays.length === 0) newErrors.push('Select at least one PD Array')
+            } else {
+                if (!formData.strategyName) newErrors.push('Strategy is required for Non-ICT style')
+            }
         }
 
         if (currentStep === 3) {
@@ -189,7 +249,15 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         try {
             const tradeData = {
                 ...formData,
+                strategyName: formData.strategyStyle === 'ICT' ? undefined : (formData.strategyName || undefined),
                 killzone: (formData.killzone ? formData.killzone : undefined),
+                session: formData.strategyStyle === 'ICT' ? formData.session : undefined,
+                weeklyBias: formData.strategyStyle === 'ICT' ? formData.weeklyBias : undefined,
+                dailyBias: formData.strategyStyle === 'ICT' ? formData.dailyBias : undefined,
+                drawOnLiquidity: formData.strategyStyle === 'ICT' ? formData.drawOnLiquidity : undefined,
+                isPremiumDiscount: formData.strategyStyle === 'ICT' ? formData.isPremiumDiscount : undefined,
+                setupType: formData.strategyStyle === 'ICT' ? formData.setupType : undefined,
+                pdArrays: formData.strategyStyle === 'ICT' ? formData.pdArrays : [],
                 entryPrice: parseFloat(formData.entryPrice as string),
                 stopLoss: parseFloat(formData.stopLoss as string),
                 takeProfit: parseFloat(formData.takeProfit as string),
@@ -202,6 +270,12 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                 date: new Date(formData.date).toISOString(),
                 entryTime: new Date(formData.entryTime).toISOString(),
                 exitTime: formData.exitTime ? new Date(formData.exitTime).toISOString() : undefined
+                ,
+                chartConfig: {
+                    symbol: chartSymbol,
+                    timeframe: chartTimeframe,
+                    timeframes: chartTimeframes
+                }
             }
 
             let response
@@ -209,30 +283,6 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                 response = await api.patch(`/trades/${trade._id}`, tradeData)
             } else {
                 response = await api.post('/trades', tradeData)
-            }
-
-            // Upload screenshots if provided
-            if (screenshots.htf || screenshots.entry || screenshots.postTrade) {
-                const formDataFiles = new FormData()
-                const tradeId = response.data._id || trade._id
-
-                if (screenshots.htf) {
-                    const filename = `${formData.instrument}_${formData.session}_HTF.png`
-                    formDataFiles.append('htf', screenshots.htf, filename)
-                }
-                if (screenshots.entry) {
-                    const filename = `${formData.instrument}_${formData.session}_ENTRY.png`
-                    formDataFiles.append('entry', screenshots.entry, filename)
-                }
-                if (screenshots.postTrade) {
-                    const result = formData.exitPrice ?
-                        (parseFloat(formData.exitPrice as string) > parseFloat(formData.entryPrice as string) ? 'WIN' : 'LOSS')
-                        : 'OPEN'
-                    const filename = `${formData.instrument}_${formData.session}_${formData.setupType}_${result}.png`
-                    formDataFiles.append('postTrade', screenshots.postTrade, filename)
-                }
-
-                await api.post(`/trades/${tradeId}/screenshots`, formDataFiles)
             }
 
             onSuccess()
@@ -292,9 +342,9 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                     exit={{ scale: 0.95, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     style={{
-                        backgroundColor: '#171717',
+                        backgroundColor: '#0b1220',
                         borderRadius: '16px',
-                        border: '1px solid #262626',
+                        border: '1px solid #0f172a',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
                         width: '95vw',
                         maxWidth: '1400px',
@@ -308,16 +358,16 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                         display: 'flex',
                         flexDirection: 'column',
                         padding: '24px 24px 0 24px',
-                        borderBottom: '1px solid #262626'
+                        borderBottom: '1px solid #0f172a'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff' }}>
+                            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#e2e8f0' }}>
                                 {trade ? 'Edit ICT Trade' : 'New ICT Trade'}
                             </h2>
                             <button
                                 onClick={onClose}
                                 style={{
-                                    color: '#a3a3a3',
+                                    color: '#94a3b8',
                                     padding: '8px',
                                     backgroundColor: 'transparent',
                                     border: 'none',
@@ -328,11 +378,11 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                     alignItems: 'center'
                                 }}
                                 onMouseOver={(e) => {
-                                    e.currentTarget.style.color = '#ffffff'
-                                    e.currentTarget.style.backgroundColor = '#262626'
+                                    e.currentTarget.style.color = '#e2e8f0'
+                                    e.currentTarget.style.backgroundColor = '#0f172a'
                                 }}
                                 onMouseOut={(e) => {
-                                    e.currentTarget.style.color = '#a3a3a3'
+                                    e.currentTarget.style.color = '#94a3b8'
                                     e.currentTarget.style.backgroundColor = 'transparent'
                                 }}
                             >
@@ -343,14 +393,14 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                         {/* Progress Bar */}
                         <div style={{ marginBottom: '20px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '12px', color: '#a3a3a3' }}>Step {step} of 4</span>
-                                <span style={{ fontSize: '12px', color: '#a3a3a3' }}>{Math.round(progressPercentage)}% Complete</span>
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>Step {step} of 4</span>
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>{Math.round(progressPercentage)}% Complete</span>
                             </div>
-                            <div style={{ width: '100%', height: '4px', backgroundColor: '#262626', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: '100%', height: '4px', backgroundColor: '#0f172a', borderRadius: '2px', overflow: 'hidden' }}>
                                 <motion.div
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progressPercentage}%` }}
-                                    style={{ height: '100%', backgroundColor: '#f97316', transition: 'width 0.3s' }}
+                                    style={{ height: '100%', backgroundColor: '#2563eb', transition: 'width 0.3s' }}
                                 />
                             </div>
                         </div>
@@ -362,8 +412,8 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                     flex: 1,
                                     padding: '8px 12px',
                                     borderRadius: '6px',
-                                    backgroundColor: step > idx + 1 ? '#166534' : step === idx + 1 ? '#f97316' : '#262626',
-                                    color: step >= idx + 1 ? '#fff' : '#737373',
+                                    backgroundColor: step > idx + 1 ? '#1d4ed8' : step === idx + 1 ? '#2563eb' : '#0f172a',
+                                    color: step >= idx + 1 ? '#fff' : '#94a3b8',
                                     fontSize: '13px',
                                     fontWeight: '500',
                                     textAlign: 'center',
@@ -420,15 +470,61 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 />
                                             </div>
                                             <div>
-                                                <label style={labelStyle}>Pair *</label>
+                                                <label style={labelStyle}>Market *</label>
                                                 <select
-                                                    value={formData.instrument}
-                                                    onChange={(e) => setFormData({ ...formData, instrument: e.target.value })}
+                                                    value={formData.market}
+                                                    onChange={(e) => {
+                                                        const nextMarket = e.target.value
+                                                        const nextDefault = INSTRUMENT_LIBRARY[nextMarket]?.[0] || ''
+                                                        setFormData({ ...formData, market: nextMarket, instrument: nextDefault || formData.instrument })
+                                                    }}
                                                     style={inputStyle}
                                                     required
                                                 >
-                                                    {FOREX_PAIRS.map(pair => <option key={pair} value={pair}>{pair}</option>)}
+                                                    {MARKET_OPTIONS.map((market) => <option key={market} value={market}>{market}</option>)}
                                                 </select>
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Strategy Style *</label>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {['ICT', 'Non-ICT'].map((style) => (
+                                                        <button
+                                                            key={style}
+                                                            type="button"
+                                                            onClick={() => setFormData({ ...formData, strategyStyle: style, strategyName: style === 'ICT' ? '' : formData.strategyName })}
+                                                            style={{
+                                                                flex: 1,
+                                                                padding: '10px',
+                                                                borderRadius: '8px',
+                                                                border: formData.strategyStyle === style ? '2px solid #2563eb' : '1px solid #bfdbfe',
+                                                                backgroundColor: formData.strategyStyle === style ? 'rgba(37, 99, 235, 0.2)' : 'transparent',
+                                                                color: formData.strategyStyle === style ? '#bfdbfe' : '#94a3b8',
+                                                                cursor: 'pointer',
+                                                                fontSize: '13px',
+                                                                fontWeight: '500'
+                                                            }}
+                                                        >
+                                                            {style}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Instrument *</label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.instrument}
+                                                    onChange={(e) => setFormData({ ...formData, instrument: e.target.value })}
+                                                    style={inputStyle}
+                                                    list="instrument-suggestions"
+                                                    required
+                                                    placeholder="e.g., BTCUSDT / NIFTY50 / RELIANCE"
+                                                />
+                                                <datalist id="instrument-suggestions">
+                                                    {(INSTRUMENT_LIBRARY[formData.market] || []).map((item) => (
+                                                        <option key={item} value={item} />
+                                                    ))}
+                                                </datalist>
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>Direction *</label>
@@ -440,9 +536,9 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                             flex: 1,
                                                             padding: '10px',
                                                             borderRadius: '8px',
-                                                            border: formData.direction === 'long' ? '2px solid #22c55e' : '1px solid #404040',
+                                                            border: formData.direction === 'long' ? '2px solid #22c55e' : '1px solid #bfdbfe',
                                                             backgroundColor: formData.direction === 'long' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                                                            color: formData.direction === 'long' ? '#22c55e' : '#a3a3a3',
+                                                            color: formData.direction === 'long' ? '#22c55e' : '#94a3b8',
                                                             cursor: 'pointer',
                                                             fontSize: '13px',
                                                             fontWeight: '500',
@@ -462,9 +558,9 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                             flex: 1,
                                                             padding: '10px',
                                                             borderRadius: '8px',
-                                                            border: formData.direction === 'short' ? '2px solid #ef4444' : '1px solid #404040',
+                                                            border: formData.direction === 'short' ? '2px solid #ef4444' : '1px solid #bfdbfe',
                                                             backgroundColor: formData.direction === 'short' ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
-                                                            color: formData.direction === 'short' ? '#ef4444' : '#a3a3a3',
+                                                            color: formData.direction === 'short' ? '#ef4444' : '#94a3b8',
                                                             cursor: 'pointer',
                                                             fontSize: '13px',
                                                             fontWeight: '500',
@@ -482,150 +578,184 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                         </div>
                                     </div>
 
-                                    <div style={formSectionStyle}>
-                                        <h3 style={sectionTitleStyle}>🌍 Session & Killzone</h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                                            <div>
-                                                <label style={labelStyle}>Session *</label>
-                                                <select
-                                                    value={formData.session}
-                                                    onChange={(e) => setFormData({ ...formData, session: e.target.value })}
-                                                    style={inputStyle}
-                                                    required
-                                                >
-                                                    {SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label style={labelStyle}>Killzone (Optional)</label>
-                                                <select
-                                                    value={formData.killzone}
-                                                    onChange={(e) => setFormData({ ...formData, killzone: e.target.value })}
-                                                    style={inputStyle}
-                                                >
-                                                    <option value="">None</option>
-                                                    {KILLZONES.map(k => <option key={k} value={k}>{k}</option>)}
-                                                </select>
+                                    {formData.strategyStyle === 'ICT' && (
+                                        <div style={formSectionStyle}>
+                                            <h3 style={sectionTitleStyle}>🌍 Session & Killzone</h3>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                                                <div>
+                                                    <label style={labelStyle}>Session *</label>
+                                                    <select
+                                                        value={formData.session}
+                                                        onChange={(e) => setFormData({ ...formData, session: e.target.value })}
+                                                        style={inputStyle}
+                                                        required
+                                                    >
+                                                        {SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label style={labelStyle}>Killzone (Optional)</label>
+                                                    <select
+                                                        value={formData.killzone}
+                                                        onChange={(e) => setFormData({ ...formData, killzone: e.target.value })}
+                                                        style={inputStyle}
+                                                    >
+                                                        <option value="">None</option>
+                                                        {KILLZONES.map(k => <option key={k} value={k}>{k}</option>)}
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div style={formSectionStyle}>
-                                        <h3 style={sectionTitleStyle}>📈 HTF Bias & Context</h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-                                            <div>
-                                                <label style={labelStyle}>Weekly Bias *</label>
-                                                <select
-                                                    value={formData.weeklyBias}
-                                                    onChange={(e) => setFormData({ ...formData, weeklyBias: e.target.value })}
-                                                    style={inputStyle}
-                                                    required
-                                                >
-                                                    {HTF_BIAS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
-                                                </select>
+                                    {formData.strategyStyle === 'ICT' && (
+                                        <div style={formSectionStyle}>
+                                            <h3 style={sectionTitleStyle}>📈 HTF Bias & Context</h3>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                                                <div>
+                                                    <label style={labelStyle}>Weekly Bias *</label>
+                                                    <select
+                                                        value={formData.weeklyBias}
+                                                        onChange={(e) => setFormData({ ...formData, weeklyBias: e.target.value })}
+                                                        style={inputStyle}
+                                                        required
+                                                    >
+                                                        {HTF_BIAS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label style={labelStyle}>Daily Bias *</label>
+                                                    <select
+                                                        value={formData.dailyBias}
+                                                        onChange={(e) => setFormData({ ...formData, dailyBias: e.target.value })}
+                                                        style={inputStyle}
+                                                        required
+                                                    >
+                                                        {HTF_BIAS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label style={labelStyle}>Draw on Liquidity *</label>
+                                                    <select
+                                                        value={formData.drawOnLiquidity}
+                                                        onChange={(e) => setFormData({ ...formData, drawOnLiquidity: e.target.value })}
+                                                        style={inputStyle}
+                                                        required
+                                                    >
+                                                        {LIQUIDITY_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                                                    </select>
+                                                </div>
                                             </div>
                                             <div>
-                                                <label style={labelStyle}>Daily Bias *</label>
-                                                <select
-                                                    value={formData.dailyBias}
-                                                    onChange={(e) => setFormData({ ...formData, dailyBias: e.target.value })}
-                                                    style={inputStyle}
-                                                    required
-                                                >
-                                                    {HTF_BIAS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label style={labelStyle}>Draw on Liquidity *</label>
-                                                <select
-                                                    value={formData.drawOnLiquidity}
-                                                    onChange={(e) => setFormData({ ...formData, drawOnLiquidity: e.target.value })}
-                                                    style={inputStyle}
-                                                    required
-                                                >
-                                                    {LIQUIDITY_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                                                </select>
+                                                <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.isPremiumDiscount}
+                                                        onChange={(e) => setFormData({ ...formData, isPremiumDiscount: e.target.checked })}
+                                                        style={{ width: '16px', height: '16px' }}
+                                                    />
+                                                    Premium / Discount Zone
+                                                </label>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.isPremiumDiscount}
-                                                    onChange={(e) => setFormData({ ...formData, isPremiumDiscount: e.target.checked })}
-                                                    style={{ width: '16px', height: '16px' }}
-                                                />
-                                                Premium / Discount Zone
-                                            </label>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
                             {/* STEP 2: SETUP & PD ARRAYS */}
                             {step === 2 && (
                                 <div>
-                                    <div style={formSectionStyle}>
-                                        <h3 style={sectionTitleStyle}>🎯 ICT Setup Type (SELECT ONE ONLY)</h3>
-                                        <p style={{ fontSize: '12px', color: '#a3a3a3', marginBottom: '16px' }}>
-                                            ⚠️ You can only select ONE setup type per trade
-                                        </p>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                                            {SETUP_TYPES.map(setup => (
-                                                <button
-                                                    key={setup}
-                                                    type="button"
-                                                    onClick={() => setFormData({ ...formData, setupType: setup })}
-                                                    style={{
-                                                        padding: '14px 16px',
-                                                        borderRadius: '8px',
-                                                        border: formData.setupType === setup ? '2px solid #f97316' : '1px solid #404040',
-                                                        backgroundColor: formData.setupType === setup ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
-                                                        color: formData.setupType === setup ? '#f97316' : '#a3a3a3',
-                                                        cursor: 'pointer',
-                                                        fontSize: '14px',
-                                                        fontWeight: '500',
-                                                        transition: 'all 0.2s',
-                                                        textAlign: 'center'
-                                                    }}
-                                                >
-                                                    {setup}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    {formData.strategyStyle === 'ICT' ? (
+                                        <>
+                                            <div style={formSectionStyle}>
+                                                <h3 style={sectionTitleStyle}>🎯 ICT Setup Type (SELECT ONE ONLY)</h3>
+                                                <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>
+                                                    ⚠️ You can only select ONE setup type per trade
+                                                </p>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                                                    {SETUP_TYPES.map(setup => (
+                                                        <button
+                                                            key={setup}
+                                                            type="button"
+                                                            onClick={() => setFormData({ ...formData, setupType: setup })}
+                                                            style={{
+                                                                padding: '14px 16px',
+                                                                borderRadius: '8px',
+                                                                border: formData.setupType === setup ? '2px solid #2563eb' : '1px solid #bfdbfe',
+                                                                backgroundColor: formData.setupType === setup ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                                                                color: formData.setupType === setup ? '#2563eb' : '#94a3b8',
+                                                                cursor: 'pointer',
+                                                                fontSize: '14px',
+                                                                fontWeight: '500',
+                                                                transition: 'all 0.2s',
+                                                                textAlign: 'center'
+                                                            }}
+                                                        >
+                                                            {setup}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
 
-                                    <div style={formSectionStyle}>
-                                        <h3 style={sectionTitleStyle}>📍 PD Arrays Used (Select Multiple)</h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                                            {PD_ARRAYS.map(array => (
-                                                <button
-                                                    key={array}
-                                                    type="button"
-                                                    onClick={() => togglePDArray(array)}
-                                                    style={{
-                                                        padding: '12px 14px',
-                                                        borderRadius: '8px',
-                                                        border: formData.pdArrays.includes(array) ? '2px solid #10b981' : '1px solid #404040',
-                                                        backgroundColor: formData.pdArrays.includes(array) ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                                                        color: formData.pdArrays.includes(array) ? '#10b981' : '#a3a3a3',
-                                                        cursor: 'pointer',
-                                                        fontSize: '13px',
-                                                        fontWeight: '500',
-                                                        transition: 'all 0.2s',
-                                                        textAlign: 'center',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: '6px'
-                                                    }}
-                                                >
-                                                    {formData.pdArrays.includes(array) && <CheckCircle2 size={14} />}
-                                                    {array}
-                                                </button>
-                                            ))}
+                                            <div style={formSectionStyle}>
+                                                <h3 style={sectionTitleStyle}>📍 PD Arrays Used (Select Multiple)</h3>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                                                    {PD_ARRAYS.map(array => (
+                                                        <button
+                                                            key={array}
+                                                            type="button"
+                                                            onClick={() => togglePDArray(array)}
+                                                            style={{
+                                                                padding: '12px 14px',
+                                                                borderRadius: '8px',
+                                                                border: formData.pdArrays.includes(array) ? '2px solid #10b981' : '1px solid #bfdbfe',
+                                                                backgroundColor: formData.pdArrays.includes(array) ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                                                                color: formData.pdArrays.includes(array) ? '#10b981' : '#94a3b8',
+                                                                cursor: 'pointer',
+                                                                fontSize: '13px',
+                                                                fontWeight: '500',
+                                                                transition: 'all 0.2s',
+                                                                textAlign: 'center',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                gap: '6px'
+                                                            }}
+                                                        >
+                                                            {formData.pdArrays.includes(array) && <CheckCircle2 size={14} />}
+                                                            {array}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div style={formSectionStyle}>
+                                            <h3 style={sectionTitleStyle}>🎯 Strategy (Non-ICT)</h3>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                                                {NON_ICT_STRATEGIES.map((strategy) => (
+                                                    <button
+                                                        key={strategy}
+                                                        type="button"
+                                                        onClick={() => setFormData({ ...formData, strategyName: strategy })}
+                                                        style={{
+                                                            padding: '14px 16px',
+                                                            borderRadius: '8px',
+                                                            border: formData.strategyName === strategy ? '2px solid #2563eb' : '1px solid #bfdbfe',
+                                                            backgroundColor: formData.strategyName === strategy ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+                                                            color: formData.strategyName === strategy ? '#bfdbfe' : '#94a3b8',
+                                                            cursor: 'pointer',
+                                                            fontSize: '14px',
+                                                            fontWeight: '500',
+                                                            textAlign: 'center'
+                                                        }}
+                                                    >
+                                                        {strategy}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
@@ -735,9 +865,9 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                     style={{
                                                         padding: '12px',
                                                         borderRadius: '8px',
-                                                        border: formData.emotionalState === state ? '2px solid #f97316' : '1px solid #404040',
+                                                        border: formData.emotionalState === state ? '2px solid #2563eb' : '1px solid #bfdbfe',
                                                         backgroundColor: formData.emotionalState === state ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
-                                                        color: formData.emotionalState === state ? '#f97316' : '#a3a3a3',
+                                                        color: formData.emotionalState === state ? '#2563eb' : '#94a3b8',
                                                         cursor: 'pointer',
                                                         fontSize: '13px',
                                                         fontWeight: '500',
@@ -748,6 +878,123 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                     {state}
                                                 </button>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    <div style={formSectionStyle}>
+                                        <h3 style={sectionTitleStyle}>📺 Multi-Timeframe Live Chart</h3>
+                                        <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>
+                                            Screenshot ke bajay yahi pair ka TradingView chart save hoga aur history me bhi show hoga.
+                                        </p>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '14px' }}>
+                                            <div>
+                                                <label style={labelStyle}>TradingView Symbol</label>
+                                                <input
+                                                    type="text"
+                                                    value={chartSymbol}
+                                                    onChange={(e) => setChartSymbol(e.target.value.toUpperCase())}
+                                                    style={inputStyle}
+                                                    placeholder="OANDA:XAUUSD"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Default Chart Timeframe</label>
+                                                <select
+                                                    value={chartTimeframe}
+                                                    onChange={(e) => setChartTimeframe(e.target.value)}
+                                                    style={inputStyle}
+                                                >
+                                                    {CHART_TIMEFRAME_OPTIONS.map((tf) => (
+                                                        <option key={tf} value={tf}>{tf}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ marginBottom: '14px' }}>
+                                            <label style={labelStyle}>Track Timeframes (max 3)</label>
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                {CHART_TIMEFRAME_OPTIONS.map((tf) => {
+                                                    const selected = chartTimeframes.includes(tf)
+                                                    return (
+                                                        <button
+                                                            key={tf}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (selected) {
+                                                                    setChartTimeframes(chartTimeframes.filter((v) => v !== tf))
+                                                                    return
+                                                                }
+                                                                if (chartTimeframes.length >= 3) return
+                                                                setChartTimeframes([...chartTimeframes, tf])
+                                                            }}
+                                                            style={{
+                                                                padding: '8px 12px',
+                                                                borderRadius: '8px',
+                                                                border: selected ? '2px solid #22d3ee' : '1px solid #bfdbfe',
+                                                                backgroundColor: selected ? 'rgba(34, 211, 238, 0.15)' : 'transparent',
+                                                                color: selected ? '#67e8f9' : '#94a3b8',
+                                                                cursor: 'pointer',
+                                                                fontSize: '12px',
+                                                                fontWeight: '600'
+                                                            }}
+                                                        >
+                                                            {tf}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div style={{ border: '1px solid #1e3a8a', borderRadius: '10px', overflow: 'hidden' }}>
+                                            <TradingViewEmbed
+                                                symbol={chartSymbol}
+                                                interval={chartTimeframe}
+                                                height={380}
+                                            />
+                                        </div>
+
+                                        <div style={{ marginTop: '12px', border: '1px solid #1e3a8a', borderRadius: '10px', padding: '12px', backgroundColor: '#0f172a' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>Trade Position Guide</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={copyLevels}
+                                                    style={{
+                                                        padding: '6px 10px',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid #334155',
+                                                        backgroundColor: '#0b1220',
+                                                        color: '#bfdbfe',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    Copy Levels
+                                                </button>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                                                <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#0b1220', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Entry</div>
+                                                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#f8fafc' }}>{formData.entryPrice || '-'}</div>
+                                                </div>
+                                                <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#0b1220', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Stop Loss</div>
+                                                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#fca5a5' }}>{formData.stopLoss || '-'}</div>
+                                                </div>
+                                                <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#0b1220', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Take Profit</div>
+                                                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#86efac' }}>{formData.takeProfit || '-'}</div>
+                                                </div>
+                                                <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#0b1220', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>R:R</div>
+                                                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#e2e8f0' }}>{rrPreview > 0 ? rrPreview.toFixed(2) : '-'}</div>
+                                                </div>
+                                            </div>
+                                            <div style={{ marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
+                                                Trade Time (UTC): {formData.entryTime ? new Date(formData.entryTime).toISOString() : '-'} | Entry TF: {formData.entryTimeframe || '-'}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -808,11 +1055,11 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                 <div>
                                     <div style={formSectionStyle}>
                                         <h3 style={sectionTitleStyle}>✅ Rule Evaluation</h3>
-                                        <p style={{ fontSize: '12px', color: '#a3a3a3', marginBottom: '16px' }}>
+                                        <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>
                                             Check each box if you followed the rule correctly
                                         </p>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#0b1220', borderRadius: '6px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.followedHTFBias}
@@ -821,7 +1068,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 />
                                                 Followed HTF Bias (Weekly/Daily alignment)
                                             </label>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#0b1220', borderRadius: '6px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.correctSession}
@@ -830,7 +1077,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 />
                                                 Correct Session / Killzone
                                             </label>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#0b1220', borderRadius: '6px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.validPDArray}
@@ -839,7 +1086,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 />
                                                 Valid PD Array Used
                                             </label>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#0b1220', borderRadius: '6px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.riskRespected}
@@ -848,7 +1095,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 />
                                                 Risk Management Respected
                                             </label>
-                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                                            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', backgroundColor: '#0b1220', borderRadius: '6px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.noEarlyExit}
@@ -862,7 +1109,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
 
                                     <div style={formSectionStyle}>
                                         <h3 style={sectionTitleStyle}>📊 Strong Data (Optional)</h3>
-                                        <p style={{ fontSize: '12px', color: '#a3a3a3', marginBottom: '16px' }}>
+                                        <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>
                                             Add these for sharper AI feedback (exact level + confirmation + excursion)
                                         </p>
 
@@ -915,63 +1162,6 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                     </div>
 
                                     <div style={formSectionStyle}>
-                                        <h3 style={sectionTitleStyle}>📸 Screenshots</h3>
-                                        <p style={{ fontSize: '12px', color: '#a3a3a3', marginBottom: '16px' }}>
-                                            Upload screenshots of your trade analysis and execution
-                                        </p>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-                                            <div style={{ border: '2px dashed #404040', borderRadius: '8px', padding: '20px', textAlign: 'center' }}>
-                                                <Upload style={{ margin: '0 auto 8px', color: '#737373' }} size={28} />
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => e.target.files && setScreenshots({ ...screenshots, htf: e.target.files[0] })}
-                                                    style={{ display: 'none' }}
-                                                    id="htf-upload"
-                                                />
-                                                <label htmlFor="htf-upload" style={{ cursor: 'pointer', color: '#f97316', fontWeight: '500', fontSize: '13px' }}>
-                                                    HTF Bias Screenshot
-                                                </label>
-                                                <p style={{ color: '#737373', fontSize: '11px', marginTop: '6px' }}>
-                                                    {screenshots.htf ? screenshots.htf.name : 'No file selected'}
-                                                </p>
-                                            </div>
-                                            <div style={{ border: '2px dashed #404040', borderRadius: '8px', padding: '20px', textAlign: 'center' }}>
-                                                <Upload style={{ margin: '0 auto 8px', color: '#737373' }} size={28} />
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => e.target.files && setScreenshots({ ...screenshots, entry: e.target.files[0] })}
-                                                    style={{ display: 'none' }}
-                                                    id="entry-upload"
-                                                />
-                                                <label htmlFor="entry-upload" style={{ cursor: 'pointer', color: '#f97316', fontWeight: '500', fontSize: '13px' }}>
-                                                    Entry TF Screenshot
-                                                </label>
-                                                <p style={{ color: '#737373', fontSize: '11px', marginTop: '6px' }}>
-                                                    {screenshots.entry ? screenshots.entry.name : 'No file selected'}
-                                                </p>
-                                            </div>
-                                            <div style={{ border: '2px dashed #404040', borderRadius: '8px', padding: '20px', textAlign: 'center' }}>
-                                                <Upload style={{ margin: '0 auto 8px', color: '#737373' }} size={28} />
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => e.target.files && setScreenshots({ ...screenshots, postTrade: e.target.files[0] })}
-                                                    style={{ display: 'none' }}
-                                                    id="post-upload"
-                                                />
-                                                <label htmlFor="post-upload" style={{ cursor: 'pointer', color: '#f97316', fontWeight: '500', fontSize: '13px' }}>
-                                                    Post-Trade Screenshot
-                                                </label>
-                                                <p style={{ color: '#737373', fontSize: '11px', marginTop: '6px' }}>
-                                                    {screenshots.postTrade ? screenshots.postTrade.name : 'No file selected'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style={formSectionStyle}>
                                         <h3 style={sectionTitleStyle}>📝 Trade Notes</h3>
                                         <textarea
                                             value={formData.notes}
@@ -980,10 +1170,10 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                             style={{
                                                 width: '100%',
                                                 padding: '12px',
-                                                backgroundColor: '#262626',
-                                                border: '1px solid #404040',
+                                                backgroundColor: '#0f172a',
+                                                border: '1px solid #bfdbfe',
                                                 borderRadius: '8px',
-                                                color: '#fff',
+                                                color: '#e2e8f0',
                                                 fontSize: '14px',
                                                 resize: 'vertical',
                                                 outline: 'none',
@@ -1003,8 +1193,8 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                         gap: '12px',
                         justifyContent: 'space-between',
                         padding: '20px 24px',
-                        borderTop: '1px solid #262626',
-                        backgroundColor: '#1a1a1a'
+                        borderTop: '1px solid #0f172a',
+                        backgroundColor: '#0b1220'
                     }}>
                         <button
                             type="button"
@@ -1012,18 +1202,18 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                             disabled={loading}
                             style={{
                                 padding: '12px 28px',
-                                backgroundColor: '#262626',
+                                backgroundColor: '#0f172a',
                                 border: 'none',
                                 borderRadius: '8px',
-                                color: '#fff',
+                                color: '#e2e8f0',
                                 fontSize: '14px',
                                 fontWeight: '500',
                                 cursor: loading ? 'not-allowed' : 'pointer',
                                 transition: 'background-color 0.2s',
                                 opacity: loading ? 0.5 : 1
                             }}
-                            onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = '#404040')}
-                            onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = '#262626')}
+                            onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = '#bfdbfe')}
+                            onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = '#0f172a')}
                         >
                             {step === 1 ? 'Cancel' : 'Previous'}
                         </button>
@@ -1035,7 +1225,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                 disabled={loading}
                                 style={{
                                     padding: '12px 28px',
-                                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                                     border: 'none',
                                     borderRadius: '8px',
                                     color: '#fff',
@@ -1057,7 +1247,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                 disabled={loading}
                                 style={{
                                     padding: '12px 32px',
-                                    background: loading ? '#404040' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                    background: loading ? '#bfdbfe' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                                     border: 'none',
                                     borderRadius: '8px',
                                     color: '#fff',
@@ -1081,3 +1271,5 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         </div>
     )
 }
+
+

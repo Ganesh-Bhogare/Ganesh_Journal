@@ -10,6 +10,9 @@ type InsightItem = {
     label: string;
     count: number;
     rate: number;
+    confidence?: number;
+    evidenceTrades?: number;
+    estimatedLeak?: number;
 };
 
 type AutoBucket = {
@@ -224,7 +227,7 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
             .sort({ date: -1 })
             .limit(limit)
             .select(
-                "date instrument direction session outcome pnl rr rMultiple ruleBreakCount riskRespected noEarlyExit validPDArray correctSession followedHTFBias emotionalState"
+                "date instrument direction session setupType outcome pnl rr rMultiple ruleBreakCount riskRespected noEarlyExit validPDArray correctSession followedHTFBias emotionalState"
             );
 
         const total = trades.length;
@@ -243,6 +246,7 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
                 repeatedMistakes: [],
                 strengths: [],
                 recommendations: [],
+                setupPerformance: [],
                 charts: { mistakes: [], emotions: [] },
             });
         }
@@ -274,6 +278,7 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
         };
 
         const emotionMap: Record<string, { count: number; net: number; wins: number; losses: number }> = {};
+        const setupMap: Record<string, { setup: string; trades: number; wins: number; losses: number; netPnl: number; grossProfit: number; grossLoss: number; rrSum: number; rrCount: number }> = {};
 
         const latestDate = trades[0]?.date ? new Date(trades[0].date) : null;
         const earliestDate = trades[total - 1]?.date ? new Date(trades[total - 1].date) : null;
@@ -314,11 +319,36 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
             emotionMap[emotion].net += pnl;
             if (pnl > 0) emotionMap[emotion].wins++;
             if (pnl < 0) emotionMap[emotion].losses++;
+
+            const setup = (t.setupType || "Unknown") as string;
+            if (!setupMap[setup]) {
+                setupMap[setup] = { setup, trades: 0, wins: 0, losses: 0, netPnl: 0, grossProfit: 0, grossLoss: 0, rrSum: 0, rrCount: 0 };
+            }
+            setupMap[setup].trades++;
+            setupMap[setup].netPnl += pnl;
+            if (pnl > 0) {
+                setupMap[setup].wins++;
+                setupMap[setup].grossProfit += pnl;
+            } else if (pnl < 0) {
+                setupMap[setup].losses++;
+                setupMap[setup].grossLoss += Math.abs(pnl);
+            }
+            if (typeof derivedRR === "number" && Number.isFinite(derivedRR)) {
+                setupMap[setup].rrSum += derivedRR;
+                setupMap[setup].rrCount++;
+            }
         }
 
         const winRate = (wins + losses) ? wins / (wins + losses) : 0;
         const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Infinity : 0);
         const avgRR = rrCount ? rrSum / rrCount : 0;
+        const avgLoss = losses > 0 ? grossLoss / losses : 0;
+
+        const confidenceForSample = (sample: number) => {
+            if (!sample || !total) return 0;
+            const normalized = Math.min(1, sample / Math.max(20, total));
+            return Math.min(0.95, 0.35 + normalized * 0.6);
+        };
 
         const ruleLabels: Record<string, string> = {
             riskRespected: "Risk not respected",
@@ -334,6 +364,9 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
                 label: ruleLabels[key] || key,
                 count,
                 rate: rate(count, total),
+                evidenceTrades: count,
+                confidence: confidenceForSample(count),
+                estimatedLeak: count * avgLoss,
             }))
             .filter((x) => x.count > 0)
             .sort((a, b) => b.count - a.count);
@@ -344,9 +377,32 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
                 label: (ruleLabels[key] || key).replace("not ", ""),
                 count,
                 rate: rate(count, total),
+                evidenceTrades: count,
+                confidence: confidenceForSample(count),
             }))
             .filter((x) => x.count > 0)
             .sort((a, b) => b.count - a.count);
+
+        const setupPerformance = Object.values(setupMap)
+            .map((s) => {
+                const setupWinRate = (s.wins + s.losses) ? s.wins / (s.wins + s.losses) : 0;
+                const avgWin = s.wins ? s.grossProfit / s.wins : 0;
+                const avgLossSetup = s.losses ? s.grossLoss / s.losses : 0;
+                const expectancy = (setupWinRate * avgWin) - ((1 - setupWinRate) * avgLossSetup);
+                return {
+                    setup: s.setup,
+                    trades: s.trades,
+                    wins: s.wins,
+                    losses: s.losses,
+                    winRate: setupWinRate,
+                    netPnl: s.netPnl,
+                    avgRR: s.rrCount ? s.rrSum / s.rrCount : 0,
+                    expectancy,
+                    confidence: confidenceForSample(s.trades),
+                    sampleTag: s.trades >= 25 ? "high" : s.trades >= 10 ? "medium" : "low",
+                };
+            })
+            .sort((a, b) => (b.trades - a.trades) || (b.expectancy - a.expectancy));
 
         const recommendations: string[] = [];
         const topMistake = repeatedMistakes[0];
@@ -390,6 +446,7 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
             repeatedMistakes,
             strengths,
             recommendations,
+            setupPerformance,
             charts,
         });
     } catch (_err) {

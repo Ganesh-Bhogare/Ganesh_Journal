@@ -5,7 +5,9 @@ import { Edit2, Trash2, Search, Filter, Download, TrendingUp, TrendingDown, Eye 
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import ICTTradeForm from '../components/ICTTradeForm'
+import TradingViewEmbed from '../components/TradingViewEmbed'
 import { api } from '../lib/api'
+import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
 
 export default function Trades() {
     const navigate = useNavigate()
@@ -18,13 +20,53 @@ export default function Trades() {
     const [showFilters, setShowFilters] = useState(false)
     const [exporting, setExporting] = useState(false)
     const [importing, setImporting] = useState(false)
+    const [savingSnapshot, setSavingSnapshot] = useState(false)
+    const [viewChartTimeframe, setViewChartTimeframe] = useState('5')
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const snapshotInputRef = useRef<HTMLInputElement | null>(null)
 
     const fileUrl = (path: string | undefined) => {
         if (!path) return undefined
         if (/^https?:\/\//i.test(path)) return path
         const base = (api.defaults.baseURL || '').replace(/\/api\/?$/, '')
         return `${base}${path}`
+    }
+
+    const pipMultiplierForInstrument = (instrument?: string) => {
+        const sym = String(instrument || '').toUpperCase()
+        if (sym.includes('XAU') || sym.includes('XAG')) return 10
+        if (sym.endsWith('JPY')) return 100
+        return 10000
+    }
+
+    const estimatePnl = (trade: any) => {
+        if (typeof trade?.pnl === 'number' && Number.isFinite(trade.pnl)) {
+            return { value: trade.pnl as number, projected: false }
+        }
+
+        const entry = Number(trade?.entryPrice)
+        const lot = Number(trade?.lotSize)
+        const direction = String(trade?.direction || '').toLowerCase()
+        if (!Number.isFinite(entry) || !Number.isFinite(lot) || lot <= 0 || (direction !== 'long' && direction !== 'short')) {
+            return { value: undefined as number | undefined, projected: false }
+        }
+
+        const target = Number.isFinite(Number(trade?.exitPrice))
+            ? Number(trade.exitPrice)
+            : Number.isFinite(Number(trade?.takeProfit))
+                ? Number(trade.takeProfit)
+                : undefined
+
+        if (target === undefined) return { value: undefined as number | undefined, projected: false }
+
+        const mult = pipMultiplierForInstrument(trade?.instrument)
+        const move = direction === 'long' ? (target - entry) : (entry - target)
+        const pips = move * mult
+        const pnl = pips * lot * 10
+        if (!Number.isFinite(pnl)) return { value: undefined as number | undefined, projected: false }
+
+        const projected = !Number.isFinite(Number(trade?.exitPrice))
+        return { value: pnl, projected }
     }
 
     const csvEscape = (value: any) => {
@@ -471,13 +513,65 @@ export default function Trades() {
     }
 
     const handleView = (trade: any) => {
+        const defaultTf = trade?.chartConfig?.timeframe || toTradingViewInterval(trade?.entryTimeframe || '5m')
+        const id = trade?._id
+        if (id) {
+            navigate(`/trade-chart?tradeId=${encodeURIComponent(id)}&tf=${encodeURIComponent(defaultTf)}`)
+            return
+        }
+
+        // Fallback if id is missing
         setViewingTrade(trade)
+        setViewChartTimeframe(defaultTf)
+    }
+
+    const handleSnapshotFile = async (file: File) => {
+        const tradeId = viewingTrade?._id
+        if (!tradeId || !file) return
+
+        try {
+            setSavingSnapshot(true)
+            const form = new FormData()
+            form.append('chart', file, file.name || `chart-${tradeId}.png`)
+            const { data } = await api.post(`/trades/${encodeURIComponent(tradeId)}/screenshots`, form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            setViewingTrade(data)
+            fetchTrades()
+        } catch (err) {
+            console.error('Failed to save chart snapshot', err)
+            alert('Failed to save snapshot. Please try again.')
+        } finally {
+            setSavingSnapshot(false)
+            if (snapshotInputRef.current) snapshotInputRef.current.value = ''
+        }
     }
 
     const filteredTrades = trades.filter(trade =>
         trade.instrument?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         trade.notes?.toLowerCase().includes(searchTerm.toLowerCase())
     )
+
+    const overlayRr = (() => {
+        const e = Number(viewingTrade?.entryPrice)
+        const s = Number(viewingTrade?.stopLoss)
+        const t = Number(viewingTrade?.takeProfit)
+        const risk = Math.abs(e - s)
+        const reward = Math.abs(t - e)
+        return Number.isFinite(risk) && Number.isFinite(reward) && risk > 0 ? reward / risk : undefined
+    })()
+
+    const exitBadgeClass = (() => {
+        const explicit = String(viewingTrade?.outcome || '').toLowerCase()
+        if (explicit === 'win') return 'bg-green-400/20 text-green-200 border-green-300/30'
+        if (explicit === 'loss') return 'bg-red-400/20 text-red-200 border-red-300/30'
+        if (explicit === 'breakeven') return 'bg-slate-400/20 text-slate-200 border-slate-300/30'
+
+        const pnl = Number(viewingTrade?.pnl)
+        if (Number.isFinite(pnl) && pnl > 0) return 'bg-green-400/20 text-green-200 border-green-300/30'
+        if (Number.isFinite(pnl) && pnl < 0) return 'bg-red-400/20 text-red-200 border-red-300/30'
+        return 'bg-violet-400/20 text-violet-200 border-violet-300/30'
+    })()
 
     return (
         <div className="space-y-6">
@@ -500,6 +594,16 @@ export default function Trades() {
                         onChange={(e) => {
                             const f = e.target.files?.[0]
                             if (f) handleImportFile(f)
+                        }}
+                    />
+                    <input
+                        ref={snapshotInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) handleSnapshotFile(f)
                         }}
                     />
                     <button
@@ -591,70 +695,78 @@ export default function Trades() {
                             </thead>
                             <tbody>
                                 {filteredTrades.map((trade, i) => (
-                                    <motion.tr
-                                        key={trade._id}
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: i * 0.05 }}
-                                        className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
-                                    >
-                                        <td className="py-3 text-sm">{new Date(trade.date).toLocaleDateString()}</td>
-                                        <td className="py-3 font-semibold">{trade.instrument}</td>
-                                        <td className="py-3">
-                                            {trade.direction === 'long' ? (
-                                                <span className="flex items-center gap-1 text-green-500">
-                                                    <TrendingUp size={16} /> LONG
-                                                </span>
-                                            ) : (
-                                                <span className="flex items-center gap-1 text-red-500">
-                                                    <TrendingDown size={16} /> SHORT
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="py-3 text-sm">{trade.entryPrice?.toFixed(5)}</td>
-                                        <td className="py-3 text-sm">{trade.exitPrice?.toFixed(5) || '-'}</td>
-                                        <td className="py-3 text-sm text-red-400">{trade.stopLoss?.toFixed(5) || '-'}</td>
-                                        <td className="py-3 text-sm text-green-400">{trade.takeProfit?.toFixed(5) || '-'}</td>
-                                        <td className="py-3 text-sm">{trade.lotSize || '-'}</td>
-                                        <td className={`py-3 font-semibold ${(trade.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'
-                                            }`}>
-                                            {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
-                                        </td>
-                                        <td className="py-3">
-                                            <div className="flex flex-wrap gap-1">
-                                                {trade.tags?.slice(0, 2).map((tag: string) => (
-                                                    <span key={tag} className="px-2 py-0.5 bg-brand/20 text-brand rounded text-xs">
-                                                        {tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td className="py-3">
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => handleView(trade)}
-                                                    className="p-2 text-neutral-200 hover:text-white hover:bg-neutral-800 rounded transition-colors"
-                                                    title="View details"
-                                                >
-                                                    <Eye size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleEdit(trade)}
-                                                    className="p-2 text-brand hover:text-brand-yellow hover:bg-neutral-800 rounded transition-colors"
-                                                    title="Edit trade"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(trade._id)}
-                                                    className="p-2 text-red-500 hover:text-red-400 hover:bg-neutral-800 rounded transition-colors"
-                                                    title="Delete trade"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </motion.tr>
+                                    (() => {
+                                        const pnlInfo = estimatePnl(trade)
+                                        const pnlVal = pnlInfo.value
+                                        const isPos = (pnlVal ?? 0) >= 0
+                                        return (
+                                            <motion.tr
+                                                key={trade._id}
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: i * 0.05 }}
+                                                className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
+                                            >
+                                                <td className="py-3 text-sm">{new Date(trade.date).toLocaleDateString()}</td>
+                                                <td className="py-3 font-semibold">{trade.instrument}</td>
+                                                <td className="py-3">
+                                                    {trade.direction === 'long' ? (
+                                                        <span className="flex items-center gap-1 text-green-500">
+                                                            <TrendingUp size={16} /> LONG
+                                                        </span>
+                                                    ) : (
+                                                        <span className="flex items-center gap-1 text-red-500">
+                                                            <TrendingDown size={16} /> SHORT
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="py-3 text-sm">{trade.entryPrice?.toFixed(5)}</td>
+                                                <td className="py-3 text-sm">{trade.exitPrice?.toFixed(5) || '-'}</td>
+                                                <td className="py-3 text-sm text-red-400">{trade.stopLoss?.toFixed(5) || '-'}</td>
+                                                <td className="py-3 text-sm text-green-400">{trade.takeProfit?.toFixed(5) || '-'}</td>
+                                                <td className="py-3 text-sm">{trade.lotSize || '-'}</td>
+                                                <td className={`py-3 font-semibold ${isPos ? 'text-green-500' : 'text-red-500'}`}>
+                                                    {typeof pnlVal === 'number'
+                                                        ? `${pnlInfo.projected ? '~' : ''}$${pnlVal.toFixed(2)}`
+                                                        : '-'}
+                                                </td>
+                                                <td className="py-3">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {trade.tags?.slice(0, 2).map((tag: string) => (
+                                                            <span key={tag} className="px-2 py-0.5 bg-brand/20 text-brand rounded text-xs">
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                                <td className="py-3">
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => handleView(trade)}
+                                                            className="p-2 text-neutral-200 hover:text-white hover:bg-neutral-800 rounded transition-colors"
+                                                            title="Open Auto Position Tool"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleEdit(trade)}
+                                                            className="p-2 text-brand hover:text-blue-300 hover:bg-neutral-800 rounded transition-colors"
+                                                            title="Edit trade"
+                                                        >
+                                                            <Edit2 size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(trade._id)}
+                                                            className="p-2 text-red-500 hover:text-red-400 hover:bg-neutral-800 rounded transition-colors"
+                                                            title="Delete trade"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </motion.tr>
+                                        )
+                                    })()
                                 ))}
                             </tbody>
                         </table>
@@ -710,7 +822,15 @@ export default function Trades() {
                                     }}
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
                                 >
-                                    Open Chart
+                                    Open Auto Position Tool
+                                </button>
+                                <button
+                                    onClick={() => snapshotInputRef.current?.click()}
+                                    disabled={savingSnapshot}
+                                    className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors disabled:opacity-60"
+                                    title="Use TradingView camera to download image, then upload it here"
+                                >
+                                    {savingSnapshot ? 'Saving…' : 'Save Snapshot'}
                                 </button>
                                 <button
                                     onClick={() => setViewingTrade(null)}
@@ -732,9 +852,14 @@ export default function Trades() {
                             </div>
                             <div className="p-4 bg-neutral-800/40 rounded-lg border border-neutral-800">
                                 <div className="text-neutral-400 text-xs mb-1">P&L</div>
-                                <div className={`font-bold ${(viewingTrade.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                    {typeof viewingTrade.pnl === 'number' ? `$${viewingTrade.pnl.toFixed(2)}` : '-'}
+                                <div className={`font-bold ${(estimatePnl(viewingTrade).value || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {typeof estimatePnl(viewingTrade).value === 'number'
+                                        ? `${estimatePnl(viewingTrade).projected ? '~' : ''}$${estimatePnl(viewingTrade).value!.toFixed(2)}`
+                                        : '-'}
                                 </div>
+                                {estimatePnl(viewingTrade).projected && (
+                                    <div className="text-[11px] text-neutral-500 mt-1">Projected (using TP)</div>
+                                )}
                             </div>
                         </div>
 
@@ -746,36 +871,118 @@ export default function Trades() {
                         </div>
 
                         <div>
-                            <div className="text-sm font-semibold mb-3">Screenshots</div>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                {([
-                                    { key: 'htfScreenshot', label: 'HTF Bias' },
-                                    { key: 'entryScreenshot', label: 'Entry TF' },
-                                    { key: 'postTradeScreenshot', label: 'Post-Trade' },
-                                    { key: 'chartScreenshot', label: 'Chart Snapshot' },
-                                ] as const).map((s) => {
-                                    const url = fileUrl(viewingTrade?.[s.key])
-                                    return (
-                                        <div key={s.key} className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-3">
-                                            <div className="text-neutral-400 text-xs mb-2">{s.label}</div>
-                                            {url ? (
-                                                <a href={url} target="_blank" rel="noreferrer" className="block">
-                                                    <img
-                                                        src={url}
-                                                        alt={s.label}
-                                                        className="w-full h-40 object-cover rounded-md border border-neutral-800"
-                                                    />
-                                                    <div className="text-xs text-neutral-400 mt-2">Open full size</div>
-                                                </a>
-                                            ) : (
-                                                <div className="h-40 flex items-center justify-center text-neutral-500 text-sm">
-                                                    No screenshot
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                })}
+                            <div className="text-sm font-semibold mb-3">Live Multi-Timeframe TradingView Chart</div>
+                            <div className="mb-3 flex flex-wrap gap-2">
+                                {((viewingTrade?.chartConfig?.timeframes && viewingTrade.chartConfig.timeframes.length
+                                    ? viewingTrade.chartConfig.timeframes
+                                    : ['5', '15', '60']) as string[]).map((tf) => (
+                                        <button
+                                            key={tf}
+                                            onClick={() => setViewChartTimeframe(tf)}
+                                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${viewChartTimeframe === tf
+                                                ? 'bg-brand/20 border-brand text-brand'
+                                                : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                                                }`}
+                                        >
+                                            {tf}
+                                        </button>
+                                    ))}
                             </div>
+                            <div className="relative border border-blue-900/70 rounded-xl overflow-hidden bg-[#0b162e]">
+                                <TradingViewEmbed
+                                    symbol={viewingTrade?.chartConfig?.symbol || resolveTradingViewSymbol(viewingTrade?.market, viewingTrade?.instrument)}
+                                    interval={viewChartTimeframe}
+                                    height={460}
+                                />
+
+                                <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-wrap gap-2">
+                                    <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-400/20 text-amber-200 border border-amber-300/30">
+                                        Entry {viewingTrade?.entryPrice ?? '-'}
+                                    </span>
+                                    {viewingTrade?.exitPrice !== undefined && viewingTrade?.exitPrice !== null && (
+                                        <span className={`px-2 py-1 rounded-md text-[11px] font-semibold border ${exitBadgeClass}`}>
+                                            Exit {viewingTrade?.exitPrice}
+                                        </span>
+                                    )}
+                                    {viewingTrade?.stopLoss !== undefined && viewingTrade?.stopLoss !== null && (
+                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-red-400/20 text-red-200 border border-red-300/30">
+                                            SL {viewingTrade?.stopLoss}
+                                        </span>
+                                    )}
+                                    {viewingTrade?.takeProfit !== undefined && viewingTrade?.takeProfit !== null && (
+                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-green-400/20 text-green-200 border border-green-300/30">
+                                            TP {viewingTrade?.takeProfit}
+                                        </span>
+                                    )}
+                                    {overlayRr !== undefined && (
+                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-cyan-400/20 text-cyan-200 border border-cyan-300/30">
+                                            RR {overlayRr.toFixed(2)}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md border border-neutral-700/70 bg-black/45 px-2 py-1 text-[11px] text-neutral-200">
+                                    Entry Time: {viewingTrade?.entryTime ? new Date(viewingTrade.entryTime).toLocaleString() : (viewingTrade?.date ? new Date(viewingTrade.date).toLocaleString() : '-')}
+                                </div>
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="p-3 rounded-lg bg-neutral-800/35 border border-neutral-800">
+                                    <div className="text-neutral-400 text-xs mb-1">Entry</div>
+                                    <div className="font-semibold text-white">{viewingTrade.entryPrice ?? '-'}</div>
+                                </div>
+                                <div className="p-3 rounded-lg bg-neutral-800/35 border border-neutral-800">
+                                    <div className="text-neutral-400 text-xs mb-1">Stop Loss</div>
+                                    <div className="font-semibold text-red-400">{viewingTrade.stopLoss ?? '-'}</div>
+                                </div>
+                                <div className="p-3 rounded-lg bg-neutral-800/35 border border-neutral-800">
+                                    <div className="text-neutral-400 text-xs mb-1">Take Profit</div>
+                                    <div className="font-semibold text-green-400">{viewingTrade.takeProfit ?? '-'}</div>
+                                </div>
+                            </div>
+                            <div className="mt-3 p-3 rounded-lg bg-neutral-800/30 border border-neutral-800">
+                                <div className="text-neutral-300 text-xs font-semibold mb-2">Trade Location Guide</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                    <div className="text-neutral-400">
+                                        Trade Time (UTC): <span className="text-neutral-200">{viewingTrade?.entryTime ? new Date(viewingTrade.entryTime).toISOString() : (viewingTrade?.date ? new Date(viewingTrade.date).toISOString() : '-')}</span>
+                                    </div>
+                                    <div className="text-neutral-400">
+                                        Entry Timeframe: <span className="text-neutral-200">{viewingTrade?.entryTimeframe || '-'}</span>
+                                    </div>
+                                    <div className="text-neutral-400">
+                                        Direction: <span className="text-neutral-200">{String(viewingTrade?.direction || '').toUpperCase() || '-'}</span>
+                                    </div>
+                                    <div className="text-neutral-400">
+                                        RR: <span className="text-neutral-200">{(() => {
+                                            const e = Number(viewingTrade?.entryPrice)
+                                            const s = Number(viewingTrade?.stopLoss)
+                                            const t = Number(viewingTrade?.takeProfit)
+                                            const r = Math.abs(e - s)
+                                            const rw = Math.abs(t - e)
+                                            return Number.isFinite(r) && Number.isFinite(rw) && r > 0 ? (rw / r).toFixed(2) : '-'
+                                        })()}</span>
+                                    </div>
+                                </div>
+                                <div className="mt-2 text-[11px] text-neutral-500">
+                                    Live chart current candle dikhata hai. Exact trade location ke liye upar Entry/SL/TP + Trade Time use karo.
+                                </div>
+                            </div>
+                            {viewingTrade?.chartScreenshot && (
+                                <div className="mt-3 p-3 rounded-lg bg-neutral-800/25 border border-neutral-800">
+                                    <div className="text-xs text-neutral-400 mb-2">Saved Snapshot</div>
+                                    <a
+                                        href={fileUrl(viewingTrade.chartScreenshot)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="block"
+                                    >
+                                        <img
+                                            src={fileUrl(viewingTrade.chartScreenshot)}
+                                            alt="Saved chart snapshot"
+                                            className="w-full max-h-48 object-contain rounded-md border border-neutral-800 bg-neutral-900"
+                                        />
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

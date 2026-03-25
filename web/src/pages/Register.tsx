@@ -29,12 +29,12 @@ export default function Register() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-black via-neutral-900 to-black">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-[#050a18] via-[#081227] to-[#0b1a34]">
             <motion.div
                 initial={{ opacity: 0, scale: 0.9, rotateX: -10 }}
                 animate={{ opacity: 1, scale: 1, rotateX: 0 }}
                 transition={{ duration: 0.6, type: 'spring' }}
-                className="bg-neutral-900 rounded-xl border border-neutral-800 p-8 max-w-md w-full shadow-2xl"
+                className="bg-[#0b162e] rounded-xl border border-blue-900/80 p-8 max-w-md w-full shadow-2xl shadow-blue-950/50"
                 style={{ transformStyle: 'preserve-3d' }}
             >
                 <motion.div

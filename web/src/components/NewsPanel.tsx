@@ -14,6 +14,10 @@ type NewsItem = {
     pairs?: string[]
 }
 
+type ImpactLevel = 'high' | 'medium' | 'low'
+type DirectionBias = 'bullish' | 'bearish' | 'mixed' | 'neutral'
+type NewsCategory = 'Macro' | 'Central Bank' | 'Geopolitical' | 'Data Release' | 'Risk Event' | 'General'
+
 type NewsBias = {
     focus: { currency?: string; pair?: string }
     summary: string
@@ -26,6 +30,54 @@ type NewsBias = {
 }
 
 const currencyOptions = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF'] as const
+
+const categoryOptions: NewsCategory[] = ['Macro', 'Central Bank', 'Geopolitical', 'Data Release', 'Risk Event', 'General']
+
+function textBlob(item: NewsItem) {
+    return `${item.title || ''} ${item.summary || ''}`.toLowerCase()
+}
+
+function detectCategory(item: NewsItem): NewsCategory {
+    const txt = textBlob(item)
+    if (/fed|ecb|boe|boj|rba|rbnz|boc|snb|interest rate|fomc|policy/.test(txt)) return 'Central Bank'
+    if (/cpi|ppi|nfp|payroll|pmi|inflation|unemployment|gdp|retail sales/.test(txt)) return 'Data Release'
+    if (/war|sanction|election|tariff|conflict|diplomatic|ceasefire/.test(txt)) return 'Geopolitical'
+    if (/risk|volatility|liquidity|flash crash|default|banking stress/.test(txt)) return 'Risk Event'
+    if (/growth|recession|yield|debt|fiscal|budget|macro/.test(txt)) return 'Macro'
+    return 'General'
+}
+
+function detectImpact(item: NewsItem): ImpactLevel {
+    const txt = textBlob(item)
+    const highSignals = /breaking|unexpected|surprise|emergency|rate decision|fomc|ecb|nfp|cpi|war|default|intervention/
+    const medSignals = /speech|minutes|forecast|guidance|pmi|sentiment|retail/
+    if (highSignals.test(txt)) return 'high'
+    if (medSignals.test(txt)) return 'medium'
+    return 'low'
+}
+
+function detectDirection(item: NewsItem): DirectionBias {
+    const txt = textBlob(item)
+    const bull = /(rises|upbeat|hawkish|strong|beat|surge|supportive|optimism|expansion)/.test(txt)
+    const bear = /(falls|dovish|weak|miss|drop|negative|concern|contraction|slowdown)/.test(txt)
+    if (bull && bear) return 'mixed'
+    if (bull) return 'bullish'
+    if (bear) return 'bearish'
+    return 'neutral'
+}
+
+function impactClasses(level: ImpactLevel) {
+    if (level === 'high') return 'bg-red-500/20 text-red-300 border-red-400/40'
+    if (level === 'medium') return 'bg-yellow-500/20 text-yellow-300 border-yellow-400/40'
+    return 'bg-blue-500/20 text-blue-300 border-blue-400/40'
+}
+
+function directionClasses(direction: DirectionBias) {
+    if (direction === 'bullish') return 'bg-green-500/20 text-green-300 border-green-400/40'
+    if (direction === 'bearish') return 'bg-red-500/20 text-red-300 border-red-400/40'
+    if (direction === 'mixed') return 'bg-orange-500/20 text-orange-300 border-orange-400/40'
+    return 'bg-neutral-700/60 text-neutral-300 border-neutral-500/40'
+}
 
 function fmtDate(iso?: string) {
     if (!iso) return ''
@@ -41,6 +93,9 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
 
     const [pair, setPair] = useState((defaultPair || '').toUpperCase())
     const [currency, setCurrency] = useState<string>('')
+    const [selectedCategory, setSelectedCategory] = useState<NewsCategory | 'All'>('All')
+    const [searchText, setSearchText] = useState('')
+    const [highImpactOnly, setHighImpactOnly] = useState(false)
 
     const [biasLoading, setBiasLoading] = useState(false)
     const [biasError, setBiasError] = useState<string | null>(null)
@@ -113,6 +168,42 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
         }
     }
 
+    const enrichedItems = useMemo(() => {
+        return items.map((item) => ({
+            ...item,
+            category: detectCategory(item),
+            impact: detectImpact(item),
+            direction: detectDirection(item),
+        }))
+    }, [items])
+
+    const filteredItems = useMemo(() => {
+        const q = searchText.trim().toLowerCase()
+        return enrichedItems.filter((item) => {
+            if (selectedCategory !== 'All' && item.category !== selectedCategory) return false
+            if (highImpactOnly && item.impact !== 'high') return false
+            if (!q) return true
+            return (`${item.title} ${item.summary || ''} ${item.source || ''}`.toLowerCase().includes(q))
+        })
+    }, [enrichedItems, selectedCategory, highImpactOnly, searchText])
+
+    const bigPicture = useMemo(() => {
+        const top = filteredItems
+            .slice()
+            .sort((a, b) => {
+                const score = (i: typeof a) => (i.impact === 'high' ? 3 : i.impact === 'medium' ? 2 : 1)
+                const timeA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0
+                const timeB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0
+                return score(b) - score(a) || timeB - timeA
+            })
+            .slice(0, 3)
+
+        return top.map((item) => {
+            const focus = item.pairs?.[0] || item.currencies?.[0] || 'FX'
+            return `${item.category}: ${item.title} (${focus}, ${item.direction})`
+        })
+    }, [filteredItems])
+
     return (
         <AnimatedCard disableHover>
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
@@ -142,7 +233,19 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
                             ))}
                         </select>
                     </div>
+                    <input
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        placeholder="Search headline/source"
+                        className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-sm w-[220px]"
+                    />
                     <div className="flex gap-2">
+                        <button
+                            onClick={() => setHighImpactOnly((v) => !v)}
+                            className={`px-3 py-2 rounded-lg border text-sm transition-colors ${highImpactOnly ? 'bg-red-500/20 border-red-400/50 text-red-200' : 'bg-neutral-800 border-neutral-700 hover:border-neutral-500'}`}
+                        >
+                            High impact only
+                        </button>
                         <button
                             onClick={refresh}
                             className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors text-sm"
@@ -160,6 +263,38 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
             {error && <div className="mt-3 text-sm text-red-300">{error}</div>}
 
             {biasError && <div className="mt-3 text-sm text-red-300">{biasError}</div>}
+
+            <div className="mt-4 p-4 rounded-xl border border-neutral-800 bg-neutral-950">
+                <div className="text-sm font-semibold">Today's Big Picture</div>
+                {bigPicture.length > 0 ? (
+                    <ul className="mt-2 text-sm text-neutral-300 list-disc pl-5 space-y-1">
+                        {bigPicture.map((line, idx) => (
+                            <li key={`${line}-${idx}`}>{line}</li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="mt-2 text-sm text-neutral-500">No narrative available for current filters.</div>
+                )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                    onClick={() => setSelectedCategory('All')}
+                    className={`px-3 py-1.5 rounded-full border text-xs ${selectedCategory === 'All' ? 'bg-neutral-200 text-neutral-900 border-neutral-200' : 'bg-neutral-900 border-neutral-700 text-neutral-300'}`}
+                >
+                    All
+                </button>
+                {categoryOptions.map((cat) => (
+                    <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1.5 rounded-full border text-xs ${selectedCategory === cat ? 'bg-neutral-200 text-neutral-900 border-neutral-200' : 'bg-neutral-900 border-neutral-700 text-neutral-300'}`}
+                    >
+                        {cat}
+                    </button>
+                ))}
+            </div>
+
             {bias && (
                 <div className="mt-4 p-4 rounded-xl border border-neutral-800 bg-neutral-950">
                     <div className="text-sm font-semibold">AI Bias</div>
@@ -227,13 +362,13 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
 
             <div className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
                 <div className="max-h-[520px] overflow-auto">
-                    {loading && items.length === 0 ? (
+                    {loading && filteredItems.length === 0 ? (
                         <div className="p-4 text-sm text-neutral-500">Loading news…</div>
-                    ) : items.length === 0 ? (
+                    ) : filteredItems.length === 0 ? (
                         <div className="p-4 text-sm text-neutral-500">No news items.</div>
                     ) : (
                         <div className="divide-y divide-neutral-800">
-                            {items.map((it, idx) => (
+                            {filteredItems.map((it, idx) => (
                                 <div key={(it.id || it.link || it.title) + ':' + idx} className="p-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                         <div className="text-xs text-neutral-500">
@@ -244,6 +379,17 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
                                             {(it.currencies || []).length ? (it.pairs?.length ? ' • ' : '') + (it.currencies || []).slice(0, 4).join(', ') : ''}
                                         </div>
                                     </div>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className={`px-2 py-0.5 rounded-full border text-[11px] uppercase tracking-wide ${impactClasses(it.impact)}`}>
+                                            {it.impact} impact
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded-full border border-neutral-600/60 text-[11px] text-neutral-300 uppercase tracking-wide">
+                                            {it.category}
+                                        </span>
+                                        <span className={`px-2 py-0.5 rounded-full border text-[11px] uppercase tracking-wide ${directionClasses(it.direction)}`}>
+                                            {it.direction}
+                                        </span>
+                                    </div>
                                     {it.link ? (
                                         <a href={it.link} target="_blank" rel="noreferrer" className="block mt-1 text-sm font-semibold hover:underline">
                                             {it.title}
@@ -251,7 +397,10 @@ export default function NewsPanel({ defaultPair, days = 7, title = 'News' }: { d
                                     ) : (
                                         <div className="mt-1 text-sm font-semibold">{it.title}</div>
                                     )}
-                                    {it.summary && <div className="mt-1 text-xs text-neutral-400 line-clamp-3">{it.summary}</div>}
+                                    {it.summary && <div className="mt-1 text-xs text-neutral-300 line-clamp-3">{it.summary}</div>}
+                                    <div className="mt-2 text-xs text-neutral-500">
+                                        Why it matters: {it.direction === 'neutral' ? 'Directional signal is unclear, monitor follow-up data.' : `Signals appear ${it.direction} for related FX instruments.`}
+                                    </div>
                                 </div>
                             ))}
                         </div>

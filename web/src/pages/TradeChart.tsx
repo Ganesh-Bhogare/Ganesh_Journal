@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CandlestickSeries, createChart, createSeriesMarkers, type CandlestickData, type IChartApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts'
+import { BaselineSeries, CandlestickSeries, LineSeries, createChart, createSeriesMarkers, type CandlestickData, type IChartApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import { api } from '../lib/api'
+import TradingViewEmbed from '../components/TradingViewEmbed'
+import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
 
 type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h'
 
@@ -63,7 +65,20 @@ function parseCsvCandles(csvText: string): CandlestickData[] {
         out.push({ time, open, high, low, close })
     }
 
-    return out.sort((a, b) => Number(a.time) - Number(b.time))
+    const sorted = out.sort((a, b) => Number(a.time) - Number(b.time))
+
+    // lightweight-charts requires strictly increasing unique timestamps.
+    const deduped: CandlestickData[] = []
+    for (const c of sorted) {
+        const last = deduped[deduped.length - 1]
+        if (last && Number(last.time) === Number(c.time)) {
+            deduped[deduped.length - 1] = c
+        } else {
+            deduped.push(c)
+        }
+    }
+
+    return deduped
 }
 
 export default function TradeChart() {
@@ -71,13 +86,23 @@ export default function TradeChart() {
     const [params] = useSearchParams()
 
     const tradeId = params.get('tradeId') || ''
+    const tfParam = (params.get('tf') || '').toLowerCase()
+
+    const initialTimeframe: Timeframe =
+        tfParam === '1m' || tfParam === '1' ? '1m'
+            : tfParam === '15m' || tfParam === '15' ? '15m'
+                : tfParam === '1h' || tfParam === '60' ? '1h'
+                    : tfParam === '4h' || tfParam === '240' ? '4h'
+                        : '5m'
 
     const [loading, setLoading] = useState(true)
     const [trade, setTrade] = useState<any>(null)
-    const [timeframe, setTimeframe] = useState<Timeframe>('5m')
+    const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe)
     const [candles, setCandles] = useState<CandlestickData[]>([])
     const [uploadingSnapshot, setUploadingSnapshot] = useState(false)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const snapshotInputRef = useRef<HTMLInputElement | null>(null)
+    const liveChartWrapperRef = useRef<HTMLDivElement | null>(null)
 
     const storageKey = useMemo(() => {
         const instrument = String(trade?.instrument || 'unknown')
@@ -257,6 +282,73 @@ export default function TradeChart() {
             })
         }
 
+        // Auto position-tool style overlay (risk/reward boxes between entry time and exit/current candle).
+        if (candles.length && entryPrice !== undefined && stopLoss !== undefined && takeProfit !== undefined) {
+            const firstTs = Number(candles[0].time)
+            const lastTs = Number(candles[candles.length - 1].time)
+
+            const entryTsRaw = entryTime && !Number.isNaN(entryTime.getTime()) ? Number(toUtcSeconds(entryTime)) : firstTs
+            const exitTsRaw = exitTime && !Number.isNaN(exitTime.getTime()) ? Number(toUtcSeconds(exitTime)) : lastTs
+
+            const fromTs = Math.max(firstTs, Math.min(entryTsRaw, lastTs)) as UTCTimestamp
+            const clampedTo = Math.max(Number(fromTs), Math.min(exitTsRaw, lastTs)) as UTCTimestamp
+
+            // Series setData needs strictly increasing times when 2+ points are supplied.
+            // If both endpoints collapse to the same candle, try using the next candle.
+            let toTs = clampedTo
+            if (Number(toTs) <= Number(fromTs)) {
+                const next = candles.find((c) => Number(c.time) > Number(fromTs))
+                if (next) toTs = next.time as UTCTimestamp
+            }
+
+            const lineData = Number(toTs) > Number(fromTs)
+                ? [{ time: fromTs, value: entryPrice }, { time: toTs, value: entryPrice }]
+                : [{ time: fromTs, value: entryPrice }]
+
+            const rewardData = Number(toTs) > Number(fromTs)
+                ? [{ time: fromTs, value: takeProfit }, { time: toTs, value: takeProfit }]
+                : [{ time: fromTs, value: takeProfit }]
+
+            const riskData = Number(toTs) > Number(fromTs)
+                ? [{ time: fromTs, value: stopLoss }, { time: toTs, value: stopLoss }]
+                : [{ time: fromTs, value: stopLoss }]
+
+            const entryPath = chart.addSeries(LineSeries, {
+                color: 'rgba(250, 204, 21, 0.9)',
+                lineWidth: 2,
+                lineStyle: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            })
+            entryPath.setData(lineData)
+
+            const rewardZone = chart.addSeries(BaselineSeries, {
+                baseValue: { type: 'price', price: entryPrice },
+                topLineColor: 'rgba(34, 197, 94, 0.78)',
+                topFillColor1: 'rgba(34, 197, 94, 0.28)',
+                topFillColor2: 'rgba(34, 197, 94, 0.08)',
+                bottomLineColor: 'rgba(34, 197, 94, 0.0)',
+                bottomFillColor1: 'rgba(34, 197, 94, 0.0)',
+                bottomFillColor2: 'rgba(34, 197, 94, 0.0)',
+                priceLineVisible: false,
+                lastValueVisible: false,
+            })
+            rewardZone.setData(rewardData)
+
+            const riskZone = chart.addSeries(BaselineSeries, {
+                baseValue: { type: 'price', price: entryPrice },
+                topLineColor: 'rgba(239, 68, 68, 0.0)',
+                topFillColor1: 'rgba(239, 68, 68, 0.0)',
+                topFillColor2: 'rgba(239, 68, 68, 0.0)',
+                bottomLineColor: 'rgba(239, 68, 68, 0.82)',
+                bottomFillColor1: 'rgba(239, 68, 68, 0.28)',
+                bottomFillColor2: 'rgba(239, 68, 68, 0.1)',
+                priceLineVisible: false,
+                lastValueVisible: false,
+            })
+            riskZone.setData(riskData)
+        }
+
         if (candles.length) {
             chart.timeScale().fitContent()
         }
@@ -287,6 +379,16 @@ export default function TradeChart() {
         setCandles([])
     }
 
+    const uploadBlobSnapshot = async (blob: Blob, filename: string) => {
+        if (!tradeId) return
+        const form = new FormData()
+        form.append('chart', blob, filename)
+        const { data } = await api.post(`/trades/${encodeURIComponent(tradeId)}/screenshots`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        setTrade(data)
+    }
+
     const uploadChartSnapshot = async () => {
         if (!tradeId) return
         const chart = chartRef.current
@@ -297,14 +399,7 @@ export default function TradeChart() {
             const canvas = chart.takeScreenshot()
             const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
             if (!blob) throw new Error('Failed to create screenshot')
-
-            const form = new FormData()
-            form.append('chart', blob, `chart-${tradeId}.png`)
-
-            const { data } = await api.post(`/trades/${encodeURIComponent(tradeId)}/screenshots`, form, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            })
-            setTrade(data)
+            await uploadBlobSnapshot(blob, `chart-${tradeId}.png`)
         } catch (err) {
             console.error('Failed to upload chart snapshot', err)
         } finally {
@@ -312,8 +407,106 @@ export default function TradeChart() {
         }
     }
 
+    const captureTradingViewSnapshot = async () => {
+        if (!tradeId) return
+
+        let stream: MediaStream | null = null
+        try {
+            setUploadingSnapshot(true)
+            if (!navigator.mediaDevices?.getDisplayMedia) {
+                throw new Error('Screen capture is not supported in this browser.')
+            }
+
+            stream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    frameRate: 30,
+                },
+                audio: false,
+            })
+
+            const video = document.createElement('video')
+            video.srcObject = stream
+            video.muted = true
+            video.playsInline = true
+            await video.play()
+
+            // Wait a tick so first frame is ready.
+            await new Promise((resolve) => setTimeout(resolve, 220))
+
+            const fullCanvas = document.createElement('canvas')
+            fullCanvas.width = video.videoWidth
+            fullCanvas.height = video.videoHeight
+            const fullCtx = fullCanvas.getContext('2d')
+            if (!fullCtx) throw new Error('Unable to capture frame context.')
+            fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height)
+
+            const rect = liveChartWrapperRef.current?.getBoundingClientRect()
+            const scaleX = fullCanvas.width / window.innerWidth
+            const scaleY = fullCanvas.height / window.innerHeight
+
+            // Fallback to full frame if chart rect is unavailable.
+            const sx = rect ? Math.max(0, Math.floor(rect.left * scaleX)) : 0
+            const sy = rect ? Math.max(0, Math.floor(rect.top * scaleY)) : 0
+            const sw = rect ? Math.min(fullCanvas.width - sx, Math.floor(rect.width * scaleX)) : fullCanvas.width
+            const sh = rect ? Math.min(fullCanvas.height - sy, Math.floor(rect.height * scaleY)) : fullCanvas.height
+
+            const cropCanvas = document.createElement('canvas')
+            cropCanvas.width = Math.max(1, sw)
+            cropCanvas.height = Math.max(1, sh)
+            const cropCtx = cropCanvas.getContext('2d')
+            if (!cropCtx) throw new Error('Unable to crop snapshot context.')
+            cropCtx.drawImage(fullCanvas, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height)
+
+            const blob: Blob | null = await new Promise(resolve => cropCanvas.toBlob(resolve, 'image/png'))
+            if (!blob) throw new Error('Failed to encode snapshot.')
+
+            await uploadBlobSnapshot(blob, `chart-tv-${tradeId}.png`)
+        } catch (err) {
+            console.error('Failed to auto-capture TradingView snapshot', err)
+            alert('Auto snapshot blocked/failed. Please allow tab sharing in prompt and try again.')
+        } finally {
+            if (stream) {
+                stream.getTracks().forEach((t) => t.stop())
+            }
+            setUploadingSnapshot(false)
+        }
+    }
+
+    const uploadManualSnapshot = async (file: File) => {
+        if (!tradeId || !file) return
+
+        try {
+            setUploadingSnapshot(true)
+            const form = new FormData()
+            form.append('chart', file, file.name || `chart-${tradeId}.png`)
+
+            const { data } = await api.post(`/trades/${encodeURIComponent(tradeId)}/screenshots`, form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            setTrade(data)
+        } catch (err) {
+            console.error('Failed to upload manual chart snapshot', err)
+        } finally {
+            setUploadingSnapshot(false)
+            if (snapshotInputRef.current) snapshotInputRef.current.value = ''
+        }
+    }
+
+    const onSaveSnapshotClick = () => {
+        // If local candles chart is rendered, we can capture directly.
+        if (candles.length && chartRef.current) {
+            uploadChartSnapshot()
+            return
+        }
+
+        // In TradingView widget mode, auto-capture current tab and crop chart area.
+        captureTradingViewSnapshot()
+    }
+
     const chartScreenshotUrl = fileUrl(trade?.chartScreenshot)
     const entryScreenshotUrl = fileUrl(trade?.entryScreenshot)
+    const tvSymbol = trade?.chartConfig?.symbol || resolveTradingViewSymbol(trade?.market, trade?.instrument)
+    const tvInterval = toTradingViewInterval(timeframe)
 
 
     const useEntryScreenshotAsChart = async () => {
@@ -336,13 +529,23 @@ export default function TradeChart() {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    <input
+                        ref={snapshotInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) uploadManualSnapshot(f)
+                        }}
+                    />
                     <button
                         onClick={() => navigate('/trades')}
                         className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors"
                     >
                         Back
                     </button>
-                    <GradientButton onClick={uploadChartSnapshot} disabled={!candles.length || uploadingSnapshot}>
+                    <GradientButton onClick={onSaveSnapshotClick} disabled={uploadingSnapshot}>
                         {uploadingSnapshot ? 'Saving…' : 'Save chart snapshot'}
                     </GradientButton>
                 </div>
@@ -406,7 +609,7 @@ export default function TradeChart() {
                     </div>
                 </div>
 
-                <div className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
+                <div ref={liveChartWrapperRef} className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
                     {candles.length ? (
                         <div ref={chartContainerRef} className="w-full" />
                     ) : entryScreenshotUrl ? (
@@ -418,7 +621,11 @@ export default function TradeChart() {
                             />
                         </a>
                     ) : (
-                        <div ref={chartContainerRef} className="w-full" />
+                        <TradingViewEmbed
+                            symbol={tvSymbol}
+                            interval={tvInterval}
+                            height={520}
+                        />
                     )}
                 </div>
 
@@ -426,7 +633,19 @@ export default function TradeChart() {
                     <div className="mt-3 text-sm text-neutral-500">
                         {entryScreenshotUrl
                             ? 'Showing your Entry TF screenshot. Upload CSV for real candlesticks + overlays.'
-                            : 'No candle data loaded yet. Upload CSV to see candlesticks + your entry/SL/TP overlays.'}
+                            : 'No local candle CSV loaded. Showing live TradingView chart; upload CSV if you want exact auto overlay positioning.'}
+                    </div>
+                )}
+
+                {candles.length && (
+                    <div className="mt-3 text-sm text-neutral-400">
+                        Auto Position Tool active: Entry (yellow), Reward zone (green), Risk zone (red) are drawn from your saved trade values and entry/exit time.
+                    </div>
+                )}
+
+                {!candles.length && (
+                    <div className="mt-2 text-xs text-neutral-500">
+                        Tip: Save chart snapshot dabate hi tab-share prompt aayega. Allow karte hi chart auto-capture hoke niche save ho jayega.
                     </div>
                 )}
             </AnimatedCard>

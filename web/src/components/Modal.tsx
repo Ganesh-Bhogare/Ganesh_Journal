@@ -16,7 +16,7 @@ export default function Modal({ isOpen, onClose, children, title }: ModalProps) 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 dark:bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
             onClick={onClose}
         >
             <motion.div
@@ -24,7 +24,7 @@ export default function Modal({ isOpen, onClose, children, title }: ModalProps) 
                 animate={{ scale: 1, rotateX: 0, opacity: 1 }}
                 exit={{ scale: 0.9, rotateX: 15, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-6 max-w-2xl w-full shadow-2xl"
+                className="bg-[#0b162e] rounded-xl border border-blue-900/80 p-6 max-w-2xl w-full shadow-2xl shadow-blue-950/50"
                 style={{ transformStyle: 'preserve-3d' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -35,7 +35,7 @@ export default function Modal({ isOpen, onClose, children, title }: ModalProps) 
                             whileHover={{ scale: 1.1, rotate: 90 }}
                             whileTap={{ scale: 0.9 }}
                             onClick={onClose}
-                            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors"
+                            className="text-neutral-400 hover:text-white transition-colors"
                         >
                             ✕
                         </motion.button>

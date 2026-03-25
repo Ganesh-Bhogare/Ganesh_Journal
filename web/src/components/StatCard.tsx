@@ -7,9 +7,10 @@ interface StatCardProps {
     icon?: ReactNode
     trend?: 'up' | 'down' | 'neutral'
     delay?: number
+    subtitle?: string
 }
 
-export default function StatCard({ title, value, icon, trend, delay = 0 }: StatCardProps) {
+export default function StatCard({ title, value, icon, trend, delay = 0, subtitle }: StatCardProps) {
     const trendColors = {
         up: 'text-green-500',
         down: 'text-red-500',
@@ -27,11 +28,16 @@ export default function StatCard({ title, value, icon, trend, delay = 0 }: StatC
                 y: -10,
                 transition: { duration: 0.2 }
             }}
-            className="bg-gradient-to-br from-white/90 to-neutral-100/80 dark:from-neutral-900 dark:to-neutral-800 rounded-xl p-6 border border-neutral-200 dark:border-neutral-700 shadow-xl shadow-black/10 dark:shadow-black/40 hover:shadow-brand/20 transition-shadow cursor-pointer"
-            style={{ transformStyle: 'preserve-3d' }}
+            className="rounded-xl p-6 border shadow-xl transition-shadow cursor-pointer"
+            style={{
+                transformStyle: 'preserve-3d',
+                background: 'linear-gradient(135deg, var(--surface-1) 0%, var(--surface-2) 100%)',
+                borderColor: 'var(--border-strong)',
+                boxShadow: '0 18px 34px -16px color-mix(in srgb, var(--accent) 28%, black 72%)'
+            }}
         >
             <div className="flex items-center justify-between mb-3">
-                <span className="text-neutral-500 dark:text-neutral-400 text-sm font-medium">{title}</span>
+                <span className="text-neutral-400 text-sm font-medium">{title}</span>
                 {icon && (
                     <motion.div
                         whileHover={{ rotate: 360 }}
@@ -43,13 +49,18 @@ export default function StatCard({ title, value, icon, trend, delay = 0 }: StatC
                 )}
             </div>
             <motion.div
-                className="text-3xl font-bold text-neutral-900 dark:text-white mb-1"
+                className="text-3xl font-bold text-white mb-1"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: delay + 0.2 }}
             >
                 {value}
             </motion.div>
+            {subtitle && (
+                <div className="text-xs text-neutral-400 mb-2">
+                    {subtitle}
+                </div>
+            )}
             {trend && (
                 <motion.div
                     initial={{ opacity: 0, x: -10 }}

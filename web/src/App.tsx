@@ -35,22 +35,29 @@ export default function App() {
 
             <Route path="/*" element={
                 <ProtectedRoute>
-                    <div className="h-dvh relative bg-gradient-to-b from-white via-white to-neutral-100 dark:from-black dark:via-black dark:to-neutral-950 text-neutral-900 dark:text-white overflow-hidden">
+                    <div
+                        className="h-dvh relative text-slate-100 overflow-hidden"
+                        style={{ background: 'linear-gradient(180deg, var(--shell-from) 0%, var(--shell-via) 50%, var(--shell-to) 100%)' }}
+                    >
                         <div className="pointer-events-none absolute inset-0">
-                            <div className="absolute -top-40 left-1/4 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-brand-yellow/10 blur-3xl" />
-                            <div className="absolute -top-56 right-0 h-[34rem] w-[34rem] rounded-full bg-brand-orange/10 blur-3xl" />
-                            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.10] dark:from-white/[0.04] via-transparent to-transparent" />
+                            <div className="absolute -top-40 left-1/4 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full blur-3xl" style={{ backgroundColor: 'var(--glow-a)' }} />
+                            <div className="absolute -top-56 right-0 h-[34rem] w-[34rem] rounded-full blur-3xl" style={{ backgroundColor: 'var(--glow-b)' }} />
+                            <div className="absolute inset-0 bg-gradient-to-b from-blue-200/[0.05] via-transparent to-transparent" />
                         </div>
                         <div className="flex h-dvh">
                             <Sidebar mobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
                             <main className="flex-1 min-w-0 h-dvh overflow-y-auto overflow-x-hidden">
                                 {/* Mobile header */}
-                                <div className="md:hidden sticky top-0 z-30 border-b border-neutral-200/70 dark:border-neutral-800/70 bg-white/70 dark:bg-black/40 supports-[backdrop-filter]:backdrop-blur">
+                                <div
+                                    className="md:hidden sticky top-0 z-30 border-b supports-[backdrop-filter]:backdrop-blur"
+                                    style={{ borderColor: 'var(--border-strong)', backgroundColor: 'color-mix(in srgb, var(--shell-from) 84%, black 16%)' }}
+                                >
                                     <div className="h-14 px-4 flex items-center justify-between">
                                         <button
                                             type="button"
                                             onClick={() => setSidebarOpen(true)}
-                                            className="inline-flex items-center justify-center h-10 w-10 rounded-lg border border-neutral-200/70 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/40"
+                                            className="inline-flex items-center justify-center h-10 w-10 rounded-lg border"
+                                            style={{ borderColor: 'var(--border-strong)', backgroundColor: 'color-mix(in srgb, var(--surface-1) 85%, black 15%)' }}
                                             aria-label="Open menu"
                                         >
                                             <Menu size={18} />

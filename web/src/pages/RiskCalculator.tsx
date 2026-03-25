@@ -113,7 +113,7 @@ export default function RiskCalculator() {
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 0.3 }}
-                            className="p-6 bg-gradient-to-br from-brand/20 to-brand-orange/10 rounded-xl border border-brand/30"
+                            className="p-6 bg-gradient-to-br from-brand/25 to-brand-yellow/10 rounded-xl border border-brand/35"
                         >
                             <div className="text-neutral-400 text-sm mb-2">Position Size</div>
                             <div className="text-4xl font-bold text-brand mb-2">{lotSize} Lots</div>

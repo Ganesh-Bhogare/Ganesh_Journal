@@ -1,19 +1,91 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-    color-scheme: light dark;
+    color-scheme: dark;
+    --shell-from: #050a18;
+    --shell-via: #081227;
+    --shell-to: #0b1a34;
+    --sidebar-from: rgba(7, 17, 36, 0.95);
+    --sidebar-to: rgba(11, 26, 52, 0.9);
+    --surface-1: rgba(11, 22, 46, 0.95);
+    --surface-2: rgba(16, 32, 61, 0.9);
+    --border-strong: rgba(30, 58, 138, 0.7);
+    --sidebar-hover-bg: rgba(30, 58, 138, 0.4);
+    --sidebar-active-bg: rgba(30, 58, 138, 0.55);
+    --sidebar-active-border: rgba(59, 130, 246, 0.7);
+    --accent: #3b82f6;
+    --accent-strong: #67e8f9;
+    --accent-grad-start: #2563eb;
+    --accent-grad-mid: #1d4ed8;
+    --accent-grad-end: #22d3ee;
+    --glow-a: rgba(34, 211, 238, 0.12);
+    --glow-b: rgba(37, 99, 235, 0.14);
+}
+
+:root[data-accent='neo-orange'] {
+    --shell-from: #140c07;
+    --shell-via: #22130b;
+    --shell-to: #2a170d;
+    --sidebar-from: rgba(26, 15, 8, 0.95);
+    --sidebar-to: rgba(44, 22, 9, 0.9);
+    --surface-1: rgba(38, 20, 12, 0.95);
+    --surface-2: rgba(52, 26, 16, 0.9);
+    --border-strong: rgba(194, 65, 12, 0.72);
+    --sidebar-hover-bg: rgba(194, 65, 12, 0.35);
+    --sidebar-active-bg: rgba(194, 65, 12, 0.45);
+    --sidebar-active-border: rgba(251, 146, 60, 0.72);
+    --accent: #f97316;
+    --accent-strong: #fdba74;
+    --accent-grad-start: #c2410c;
+    --accent-grad-mid: #ea580c;
+    --accent-grad-end: #fb923c;
+    --glow-a: rgba(249, 115, 22, 0.16);
+    --glow-b: rgba(251, 146, 60, 0.15);
+}
+
+:root[data-accent='neo-black'] {
+    --shell-from: #030303;
+    --shell-via: #070707;
+    --shell-to: #0c0c0c;
+    --sidebar-from: rgba(7, 7, 7, 0.95);
+    --sidebar-to: rgba(17, 17, 18, 0.9);
+    --surface-1: rgba(14, 14, 15, 0.95);
+    --surface-2: rgba(22, 22, 24, 0.9);
+    --border-strong: rgba(82, 82, 91, 0.68);
+    --sidebar-hover-bg: rgba(63, 63, 70, 0.36);
+    --sidebar-active-bg: rgba(63, 63, 70, 0.5);
+    --sidebar-active-border: rgba(113, 113, 122, 0.75);
+    --accent: #a1a1aa;
+    --accent-strong: #e4e4e7;
+    --accent-grad-start: #3f3f46;
+    --accent-grad-mid: #52525b;
+    --accent-grad-end: #71717a;
+    --glow-a: rgba(113, 113, 122, 0.12);
+    --glow-b: rgba(161, 161, 170, 0.1);
 }
 
 body {
-    @apply bg-white text-neutral-900 dark:bg-black dark:text-white font-sans antialiased;
+    @apply text-slate-100 font-sans antialiased;
+    background: linear-gradient(180deg, var(--shell-from) 0%, var(--shell-via) 50%, var(--shell-to) 100%);
 }
 
 .sidebar-link {
-    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800/60 hover:shadow-md hover:shadow-black/10 dark:hover:shadow-black/30 transition-all duration-200;
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:shadow-md transition-all duration-200;
+    background: transparent;
+}
+
+.sidebar-link:hover {
+    background: var(--sidebar-hover-bg);
+}
+
+.sidebar-link-active {
+    background: var(--sidebar-active-bg);
+    border: 1px solid var(--sidebar-active-border);
+    color: var(--accent-strong);
 }
 
 /* 3D Transform utilities */
@@ -51,9 +123,9 @@ body {
 
 /* Glow effects */
 .glow-brand {
-    box-shadow: 0 0 20px rgba(251, 146, 60, 0.3);
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.28);
 }
 
 .glow-brand-strong {
-    box-shadow: 0 0 30px rgba(251, 146, 60, 0.5);
+    box-shadow: 0 0 36px rgba(37, 99, 235, 0.45);
 }

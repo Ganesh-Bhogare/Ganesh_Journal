@@ -1,14 +1,15 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export type Direction = "long" | "short";
-export type Session = "Asia" | "London" | "New York";
-export type Killzone = "London Open" | "NY AM" | "NY PM";
-export type HTFBias = "Bullish" | "Bearish" | "Range";
-export type DrawOnLiquidity = "Buy-side" | "Sell-side";
-export type SetupType = "FVG" | "Order Block" | "Liquidity Sweep + MSS" | "Judas Swing" | "Power of 3 (AMD)" | "Breaker Block";
-export type EntryConfirmation = "MSS" | "Displacement" | "FVG Tap";
-export type ConfirmationQuality = "Strong" | "Weak";
-export type EmotionalState = "Calm" | "FOMO" | "Revenge" | "Hesitant";
+export type Market = "Forex" | "Crypto" | "Indian Equity" | "Indian Futures" | "Indian Options" | "Commodities" | "Indices" | "Other" | string;
+export type Session = string;
+export type Killzone = string;
+export type HTFBias = string;
+export type DrawOnLiquidity = string;
+export type SetupType = string;
+export type EntryConfirmation = string;
+export type ConfirmationQuality = string;
+export type EmotionalState = string;
 export type Outcome = "win" | "loss" | "breakeven";
 
 export interface ITrade extends Document {
@@ -16,6 +17,7 @@ export interface ITrade extends Document {
 
     // Basic Info
     date: Date;
+    market?: Market;
     instrument: string;
     direction: Direction;
 
@@ -29,6 +31,7 @@ export interface ITrade extends Document {
 
     // ICT Setup (ONLY ONE ALLOWED)
     setupType?: SetupType;
+    strategyName?: string;
 
     // PD Arrays Used (Multiple allowed)
     pdArrays?: string[]; // ["Daily High/Low", "Weekly High/Low", etc.]
@@ -88,6 +91,13 @@ export interface ITrade extends Document {
     postTradeScreenshot?: string;
     chartScreenshot?: string;
 
+    // Live chart config (TradingView)
+    chartConfig?: {
+        symbol?: string;
+        timeframe?: string;
+        timeframes?: string[];
+    };
+
     // Notes
     notes?: string;
 
@@ -103,23 +113,23 @@ const TradeSchema = new Schema<ITrade>({
 
     // Basic Info
     date: { type: Date, required: true },
+    market: { type: String, default: "Forex" },
     instrument: { type: String, required: true },
     direction: { type: String, enum: ["long", "short"], required: true },
 
     // ICT Pre-Trade Analysis
-    session: { type: String, enum: ["Asia", "London", "New York"], default: "London" },
-    killzone: { type: String, enum: ["London Open", "NY AM", "NY PM"] },
-    weeklyBias: { type: String, enum: ["Bullish", "Bearish", "Range"], default: "Range" },
-    dailyBias: { type: String, enum: ["Bullish", "Bearish", "Range"], default: "Range" },
-    drawOnLiquidity: { type: String, enum: ["Buy-side", "Sell-side"], default: "Buy-side" },
+    session: { type: String },
+    killzone: { type: String },
+    weeklyBias: { type: String },
+    dailyBias: { type: String },
+    drawOnLiquidity: { type: String },
     isPremiumDiscount: { type: Boolean, default: false },
 
     // ICT Setup
     setupType: {
-        type: String,
-        enum: ["FVG", "Order Block", "Liquidity Sweep + MSS", "Judas Swing", "Power of 3 (AMD)", "Breaker Block"],
-        default: "FVG"
+        type: String
     },
+    strategyName: { type: String },
 
     // PD Arrays
     pdArrays: [{ type: String }],
@@ -127,7 +137,7 @@ const TradeSchema = new Schema<ITrade>({
     // Entry Execution
     entryTime: { type: Date, default: function (this: any) { return this.date || new Date(); } },
     entryTimeframe: { type: String, default: "5m" },
-    entryConfirmation: { type: String, enum: ["MSS", "Displacement", "FVG Tap"], default: "MSS" },
+    entryConfirmation: { type: String },
     entryPrice: { type: Number, required: true },
     stopLoss: { type: Number },
     takeProfit: { type: Number },
@@ -144,7 +154,7 @@ const TradeSchema = new Schema<ITrade>({
     // Trade Management
     partialTaken: { type: Boolean, default: false },
     slMovedToBE: { type: Boolean, default: false },
-    emotionalState: { type: String, enum: ["Calm", "FOMO", "Revenge", "Hesitant"], default: "Calm" },
+    emotionalState: { type: String, default: "Calm" },
 
     // Post-Trade Review
     outcome: { type: String, enum: ["win", "loss", "breakeven"] },
@@ -156,7 +166,7 @@ const TradeSchema = new Schema<ITrade>({
 
     // Plan context (manual)
     htfLevelUsed: { type: String },
-    ltfConfirmationQuality: { type: String, enum: ["Strong", "Weak"] },
+    ltfConfirmationQuality: { type: String },
 
     // Rule Evaluation
     followedHTFBias: { type: Boolean, default: true },
@@ -178,6 +188,13 @@ const TradeSchema = new Schema<ITrade>({
     entryScreenshot: { type: String },
     postTradeScreenshot: { type: String },
     chartScreenshot: { type: String },
+
+    // Live chart config
+    chartConfig: {
+        symbol: { type: String },
+        timeframe: { type: String },
+        timeframes: [{ type: String }],
+    },
 
     // Notes
     notes: { type: String },

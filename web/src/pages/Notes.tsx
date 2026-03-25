@@ -4,6 +4,7 @@ import { BookOpen, Plus, Edit2, Trash2, Save, X, Calendar } from 'lucide-react'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import { format } from 'date-fns'
+import { useAuth } from '../contexts/AuthContext'
 
 interface JournalEntry {
     id: string
@@ -15,6 +16,7 @@ interface JournalEntry {
 }
 
 export default function Notes() {
+    const { user } = useAuth()
     const [entries, setEntries] = useState<JournalEntry[]>([])
     const [isEditing, setIsEditing] = useState(false)
     const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null)
@@ -26,20 +28,39 @@ export default function Notes() {
     })
 
     useEffect(() => {
-        // Load from localStorage
-        const saved = localStorage.getItem('journal_entries')
-        if (saved) {
-            const parsed = JSON.parse(saved)
-            setEntries(parsed.map((e: any) => ({ ...e, date: new Date(e.date) })))
+        // Store notes per-user to avoid leaking notes across accounts on the same browser.
+        if (!user?.id) {
+            setEntries([])
+            return
         }
-    }, [])
+
+        const storageKey = `journal_entries_${user.id}`
+
+        // One-time migration from the legacy shared key.
+        const legacy = localStorage.getItem('journal_entries')
+        const existing = localStorage.getItem(storageKey)
+        if (!existing && legacy) {
+            localStorage.setItem(storageKey, legacy)
+            localStorage.removeItem('journal_entries')
+        }
+
+        const saved = localStorage.getItem(storageKey)
+        if (!saved) {
+            setEntries([])
+            return
+        }
+        const parsed = JSON.parse(saved)
+        setEntries(parsed.map((e: any) => ({ ...e, date: new Date(e.date) })))
+    }, [user?.id])
 
     const saveToStorage = (newEntries: JournalEntry[]) => {
-        localStorage.setItem('journal_entries', JSON.stringify(newEntries))
+        if (!user?.id) return
+        localStorage.setItem(`journal_entries_${user.id}`, JSON.stringify(newEntries))
     }
 
     const handleSave = () => {
         if (!formData.title || !formData.content) return
+        if (!user?.id) return
 
         const newEntry: JournalEntry = {
             id: editingEntry?.id || Date.now().toString(),

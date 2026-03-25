@@ -132,13 +132,14 @@ async function applyRiskEngine(userId: string | undefined, tradeLike: any) {
 
 // Calculate P&L, outcome, and R:R for a trade
 function calculateTradeMetrics(data: any) {
-    const { direction, entryPrice, exitPrice, stopLoss, lotSize } = data;
+    const { direction, entryPrice, exitPrice, stopLoss, lotSize, instrument } = data;
 
     // Calculate P&L if exitPrice exists
     if ((data.pnl === undefined || data.pnl === null) && exitPrice && entryPrice && lotSize) {
+        const mult = pipMultiplierForInstrument(String(instrument || ""));
         const pips = direction === 'long'
-            ? (exitPrice - entryPrice) * 10000
-            : (entryPrice - exitPrice) * 10000;
+            ? (exitPrice - entryPrice) * mult
+            : (entryPrice - exitPrice) * mult;
 
         // Assuming standard lot: $10 per pip, adjust based on lotSize
         data.pnl = (pips * lotSize * 10);

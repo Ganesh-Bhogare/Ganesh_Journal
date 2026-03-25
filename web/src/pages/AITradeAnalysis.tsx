@@ -49,6 +49,9 @@ export default function AITradeAnalysis() {
     const [autoResult, setAutoResult] = useState<any>(null)
     const [autoLoading, setAutoLoading] = useState(false)
 
+    const [diagnostics, setDiagnostics] = useState<any>(null)
+    const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+
     useEffect(() => {
         const boot = async () => {
             try {
@@ -64,6 +67,27 @@ export default function AITradeAnalysis() {
         }
         boot()
     }, [])
+
+    const loadDiagnostics = async () => {
+        if (diagnosticsLoading) return
+        setDiagnosticsLoading(true)
+        try {
+            const { data } = await api.get('/analytics/ai-insights?limit=300')
+            setDiagnostics(data)
+        } catch (err: any) {
+            const msg = err?.response?.data?.error || 'Failed to load diagnostics'
+            alert(msg)
+        } finally {
+            setDiagnosticsLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        if (!trades.length) return
+        loadDiagnostics()
+        // auto-load once after trades arrive
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trades.length])
 
     useEffect(() => {
         const qpTradeId = searchParams.get('tradeId')
@@ -181,6 +205,128 @@ export default function AITradeAnalysis() {
             </motion.div>
 
             <div className="grid grid-cols-1 gap-6">
+                <AnimatedCard delay={0.03}>
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                        <div>
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                AI Journal Diagnostics
+                                <span className="px-2 py-0.5 rounded-full text-[11px] bg-brand/15 border border-brand/40 text-brand">AI v2</span>
+                            </h3>
+                            <p className="text-sm text-neutral-400 mt-1">Confidence-scored mistakes, leak estimate, and setup expectancy.</p>
+                        </div>
+                        <button
+                            onClick={loadDiagnostics}
+                            className="px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
+                        >
+                            {diagnosticsLoading ? 'Refreshing...' : 'Refresh Diagnostics'}
+                        </button>
+                    </div>
+
+                    {diagnostics?.tradesAnalyzed ? (
+                        <div className="space-y-4">
+                            {!diagnostics?.setupPerformance && (
+                                <div className="text-xs text-yellow-200 border border-yellow-500/30 bg-yellow-500/10 rounded-lg px-3 py-2">
+                                    Enhanced fields are missing in response. Restart backend in dev mode (`npm run dev`) or rebuild `server/dist`.
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-3">
+                                    <div className="text-neutral-400 text-xs">Trades analyzed</div>
+                                    <div className="text-xl font-semibold mt-1">{diagnostics.tradesAnalyzed}</div>
+                                </div>
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-3">
+                                    <div className="text-neutral-400 text-xs">Net P&L</div>
+                                    <div className={`text-xl font-semibold mt-1 ${(diagnostics.summary?.netPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatMoney(diagnostics.summary?.netPnl)}</div>
+                                </div>
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-3">
+                                    <div className="text-neutral-400 text-xs">Win Rate</div>
+                                    <div className="text-xl font-semibold mt-1">{formatMetric((diagnostics.summary?.winRate || 0) * 100, 1)}%</div>
+                                </div>
+                                <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-3">
+                                    <div className="text-neutral-400 text-xs">Avg RR</div>
+                                    <div className="text-xl font-semibold mt-1">{formatMetric(diagnostics.summary?.avgRR || 0, 2)}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <div className="font-semibold mb-2">Repeated Mistakes</div>
+                                    <div className="space-y-2">
+                                        {(diagnostics.repeatedMistakes || []).slice(0, 5).map((m: any) => (
+                                            <div key={m.key} className="bg-neutral-800/30 border border-neutral-800 rounded-lg px-3 py-2 flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-sm text-neutral-200">{m.label}</div>
+                                                    <div className="text-[11px] text-neutral-400">Confidence: {formatMetric((m.confidence || 0) * 100, 0)}% • Evidence: {m.evidenceTrades || m.count}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-sm text-neutral-300">{m.count} ({formatMetric((m.rate || 0) * 100, 0)}%)</div>
+                                                    <div className="text-xs text-red-300">Leak: {formatMoney(m.estimatedLeak)}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="font-semibold mb-2">Good Habits</div>
+                                    <div className="space-y-2">
+                                        {(diagnostics.strengths || []).slice(0, 5).map((s: any) => (
+                                            <div key={s.key} className="bg-neutral-800/30 border border-neutral-800 rounded-lg px-3 py-2 flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-sm text-neutral-200">{s.label}</div>
+                                                    <div className="text-[11px] text-neutral-400">Confidence: {formatMetric((s.confidence || 0) * 100, 0)}% • Evidence: {s.evidenceTrades || s.count}</div>
+                                                </div>
+                                                <div className="text-sm text-neutral-300">{s.count} ({formatMetric((s.rate || 0) * 100, 0)}%)</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(diagnostics.setupPerformance || []).length > 0 && (
+                                <div>
+                                    <div className="font-semibold mb-2">Setup Expectancy Engine</div>
+                                    <div className="overflow-x-auto border border-neutral-800 rounded-lg">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-left text-neutral-400 border-b border-neutral-800 bg-neutral-900/40">
+                                                    <th className="px-3 py-2">Setup</th>
+                                                    <th className="px-3 py-2">Trades</th>
+                                                    <th className="px-3 py-2">Win Rate</th>
+                                                    <th className="px-3 py-2">Expectancy</th>
+                                                    <th className="px-3 py-2">Avg RR</th>
+                                                    <th className="px-3 py-2">Confidence</th>
+                                                    <th className="px-3 py-2">Sample</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(diagnostics.setupPerformance || []).slice(0, 8).map((s: any) => (
+                                                    <tr key={s.setup} className="border-b border-neutral-800/70">
+                                                        <td className="px-3 py-2 font-medium">{s.setup}</td>
+                                                        <td className="px-3 py-2">{s.trades}</td>
+                                                        <td className="px-3 py-2">{formatMetric((s.winRate || 0) * 100, 1)}%</td>
+                                                        <td className={`px-3 py-2 font-semibold ${(s.expectancy || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatMoney(s.expectancy)}</td>
+                                                        <td className="px-3 py-2">{formatMetric(s.avgRR || 0, 2)}</td>
+                                                        <td className="px-3 py-2">{formatMetric((s.confidence || 0) * 100, 0)}%</td>
+                                                        <td className="px-3 py-2">
+                                                            <span className={`px-2 py-0.5 rounded text-xs ${s.sampleTag === 'high' ? 'bg-green-500/20 text-green-300' : s.sampleTag === 'medium' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-red-500/20 text-red-300'}`}>
+                                                                {s.sampleTag}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-neutral-500 text-sm">Diagnostics ready. Click refresh if not loaded yet.</div>
+                    )}
+                </AnimatedCard>
+
                 <AnimatedCard delay={0.05}>
                     <div className="flex items-center justify-between gap-3 mb-4">
                         <h3 className="text-lg font-semibold">Single Trade AI Analysis</h3>
@@ -610,7 +756,7 @@ export default function AITradeAnalysis() {
                             ) : null}
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                <div className="p-4 rounded-xl border border-blue-900/70 bg-[#0b162e]/80">
                                     <div className="font-medium mb-2">Best Pairs</div>
                                     <div className="h-56">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -619,13 +765,13 @@ export default function AITradeAnalysis() {
                                                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
                                                 <YAxis tick={{ fontSize: 10 }} />
                                                 <Tooltip />
-                                                <Bar dataKey="netPnl" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                                                <Bar dataKey="netPnl" fill="#3b82f6" radius={[6, 6, 0, 0]} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
 
-                                <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                <div className="p-4 rounded-xl border border-blue-900/70 bg-[#0b162e]/80">
                                     <div className="font-medium mb-2">Best Sessions</div>
                                     <div className="h-56">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -634,14 +780,14 @@ export default function AITradeAnalysis() {
                                                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
                                                 <YAxis tick={{ fontSize: 10 }} />
                                                 <Tooltip />
-                                                <Bar dataKey="winRate" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                                                <Bar dataKey="winRate" fill="#22d3ee" radius={[6, 6, 0, 0]} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
                                     <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Win rate (0–1)</div>
                                 </div>
 
-                                <div className="p-4 rounded-xl border border-neutral-200/60 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/20">
+                                <div className="p-4 rounded-xl border border-blue-900/70 bg-[#0b162e]/80">
                                     <div className="font-medium mb-2">Best Setups</div>
                                     <div className="h-56">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -650,7 +796,7 @@ export default function AITradeAnalysis() {
                                                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
                                                 <YAxis tick={{ fontSize: 10 }} />
                                                 <Tooltip />
-                                                <Bar dataKey="netPnl" fill="#a855f7" radius={[6, 6, 0, 0]} />
+                                                <Bar dataKey="netPnl" fill="#2563eb" radius={[6, 6, 0, 0]} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>

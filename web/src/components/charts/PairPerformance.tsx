@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 
 interface PairPerformanceProps {
     data: { pair: string; profit: number; loss: number; net?: number }[]
+    onPairClick?: (pair: string) => void
+    activePair?: string
 }
 
 function formatMoney(value: number) {
@@ -11,7 +13,7 @@ function formatMoney(value: number) {
     return `${sign}$${Math.abs(v).toFixed(2)}`
 }
 
-export default function PairPerformance({ data }: PairPerformanceProps) {
+export default function PairPerformance({ data, onPairClick, activePair }: PairPerformanceProps) {
     const chartData = data.map((d) => ({
         ...d,
         lossChart: -Math.abs(Number.isFinite(d.loss) ? d.loss : 0)
@@ -25,7 +27,13 @@ export default function PairPerformance({ data }: PairPerformanceProps) {
             className="w-full h-full"
         >
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <BarChart
+                    data={chartData}
+                    onClick={(state: any) => {
+                        const pair = state?.activeLabel
+                        if (pair && onPairClick) onPairClick(pair)
+                    }}
+                >
                     <CartesianGrid strokeDasharray="3 3" stroke="#404040" />
                     <XAxis dataKey="pair" stroke="#888" tick={{ fill: '#888' }} />
                     <YAxis
@@ -60,6 +68,12 @@ export default function PairPerformance({ data }: PairPerformanceProps) {
                     />
                 </BarChart>
             </ResponsiveContainer>
+
+            {activePair && (
+                <div className="mt-2 text-xs text-neutral-400">
+                    Drill-down active: <span className="text-brand font-semibold">{activePair}</span>
+                </div>
+            )}
         </motion.div>
     )
 }

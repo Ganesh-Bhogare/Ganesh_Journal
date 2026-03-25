@@ -28,13 +28,20 @@ export default function AnimatedCard({ children, delay = 0, className = '', disa
                     : undefined
             }
             whileTap={allowHover ? { scale: 0.995 } : undefined}
-            style={allowHover ? { transformPerspective: 1200 } : undefined}
-            className={`group relative overflow-hidden bg-gradient-to-b from-white/90 to-neutral-50/80 dark:from-neutral-900/95 dark:to-neutral-950/85 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80 p-6 shadow-xl shadow-black/10 dark:shadow-black/40 hover:border-neutral-300/80 dark:hover:border-neutral-700/80 transition-colors transform-gpu ${className}`}
+            style={allowHover ? {
+                transformPerspective: 1200,
+                background: 'linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 100%)',
+                borderColor: 'var(--border-strong)'
+            } : {
+                background: 'linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 100%)',
+                borderColor: 'var(--border-strong)'
+            }}
+            className={`group relative overflow-hidden rounded-xl border p-6 shadow-xl transition-colors transform-gpu ${className}`}
         >
             <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-yellow/10 blur-3xl" />
-                <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-brand-orange/10 blur-3xl" />
-                <div className="absolute inset-0 bg-gradient-to-b from-white/[0.06] via-transparent to-transparent" />
+                <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-yellow/12 blur-3xl" />
+                <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-brand-orange/12 blur-3xl" />
+                <div className="absolute inset-0 bg-gradient-to-b from-blue-200/[0.04] via-transparent to-transparent" />
             </div>
             <div className="relative z-10">{children}</div>
         </motion.div>

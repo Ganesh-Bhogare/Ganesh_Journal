@@ -7,13 +7,13 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Inter', ...defaultTheme.fontFamily.sans],
+                sans: ['Manrope', ...defaultTheme.fontFamily.sans],
             },
             colors: {
                 brand: {
-                    DEFAULT: '#f59e0b',
-                    yellow: '#f59e0b',
-                    orange: '#fb923c'
+                    DEFAULT: '#3b82f6',
+                    yellow: '#22d3ee',
+                    orange: '#2563eb'
                 }
             }
         }

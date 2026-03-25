@@ -35,32 +35,27 @@ export const userPreferencesSchema = z.object({
 export const tradeSchema = z.object({
     // Basic info
     date: z.string(), // ISO date
+    market: z.string().min(1).optional(),
     instrument: z.string().min(1),
     direction: z.enum(["long", "short"]),
 
     // ICT pre-trade
-    session: z.enum(["Asia", "London", "New York"]).optional(),
-    killzone: z.enum(["London Open", "NY AM", "NY PM"]).optional(),
-    weeklyBias: z.enum(["Bullish", "Bearish", "Range"]).optional(),
-    dailyBias: z.enum(["Bullish", "Bearish", "Range"]).optional(),
-    drawOnLiquidity: z.enum(["Buy-side", "Sell-side"]).optional(),
+    session: z.string().optional(),
+    killzone: z.string().optional(),
+    weeklyBias: z.string().optional(),
+    dailyBias: z.string().optional(),
+    drawOnLiquidity: z.string().optional(),
     isPremiumDiscount: z.boolean().optional(),
 
     // ICT setup
-    setupType: z.enum([
-        "FVG",
-        "Order Block",
-        "Liquidity Sweep + MSS",
-        "Judas Swing",
-        "Power of 3 (AMD)",
-        "Breaker Block",
-    ]).optional(),
+    setupType: z.string().optional(),
+    strategyName: z.string().optional(),
     pdArrays: z.array(z.string()).optional(),
 
     // Entry execution
     entryTime: z.string().optional(),
     entryTimeframe: z.string().min(1).optional(),
-    entryConfirmation: z.enum(["MSS", "Displacement", "FVG Tap"]).optional(),
+    entryConfirmation: z.string().optional(),
     entryPrice: z.coerce.number().positive(),
     stopLoss: z.coerce.number().positive().optional(),
     takeProfit: z.coerce.number().positive().optional(),
@@ -77,7 +72,7 @@ export const tradeSchema = z.object({
     // Management
     partialTaken: z.boolean().optional(),
     slMovedToBE: z.boolean().optional(),
-    emotionalState: z.enum(["Calm", "FOMO", "Revenge", "Hesitant"]).optional(),
+    emotionalState: z.string().optional(),
 
     // Post trade
     outcome: z.enum(["win", "loss", "breakeven"]).optional(),
@@ -91,7 +86,7 @@ export const tradeSchema = z.object({
 
     // Plan context (manual)
     htfLevelUsed: z.string().optional(),
-    ltfConfirmationQuality: z.enum(["Strong", "Weak"]).optional(),
+    ltfConfirmationQuality: z.string().optional(),
 
     // Rule evaluation
     followedHTFBias: z.boolean().optional(),
@@ -104,6 +99,13 @@ export const tradeSchema = z.object({
     notes: z.string().optional(),
     tags: z.array(z.string()).optional(),
     timeframe: z.string().optional(),
+
+    // Live chart config
+    chartConfig: z.object({
+        symbol: z.string().min(1).optional(),
+        timeframe: z.string().min(1).optional(),
+        timeframes: z.array(z.string().min(1)).optional(),
+    }).optional(),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
