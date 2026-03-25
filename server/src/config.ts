@@ -52,6 +52,9 @@ export const config = {
     newsCacheTtlSeconds: parseInt(process.env.NEWS_CACHE_TTL_SECONDS || "180", 10),
     newsDefaultLimit: parseInt(process.env.NEWS_DEFAULT_LIMIT || "200", 10),
     newsMaxLimit: parseInt(process.env.NEWS_MAX_LIMIT || "500", 10),
+
+    // Funded read-only terminal bridge
+    fundedBridgeToken: process.env.FUNDED_BRIDGE_TOKEN || "",
 };
 
 // Resolve upload directory relative to the server workspace (stable across environments)

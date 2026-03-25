@@ -24,6 +24,27 @@ export interface IUser extends Document {
 
         // How strict to be
         enforcement?: "warn" | "block";
+
+        // Funded account bridge (read-only)
+        fundedReadOnlyEnabled?: boolean;
+        fundedProvider?: string;
+        fundedTerminalType?: "mt4" | "mt5" | "other";
+        fundedAccountId?: string;
+        fundedServer?: string;
+        fundedExecutionEnabled?: boolean;
+        fundedLiveOpenPositions?: Array<{
+            ticket?: string;
+            symbol?: string;
+            direction?: "long" | "short";
+            volume?: number;
+            openPrice?: number;
+            currentPrice?: number;
+            unrealizedPnl?: number;
+            sl?: number;
+            tp?: number;
+            openTime?: Date;
+        }>;
+        fundedLiveUpdatedAt?: Date;
     };
 }
 
@@ -46,6 +67,26 @@ const UserSchema = new Schema<IUser>({
         maxTradesPerDay: { type: Number },
         stopAfterLosses: { type: Number },
         enforcement: { type: String, enum: ["warn", "block"], default: "block" },
+
+        fundedReadOnlyEnabled: { type: Boolean, default: false },
+        fundedProvider: { type: String },
+        fundedTerminalType: { type: String, enum: ["mt4", "mt5", "other"], default: "mt5" },
+        fundedAccountId: { type: String },
+        fundedServer: { type: String },
+        fundedExecutionEnabled: { type: Boolean, default: false },
+        fundedLiveOpenPositions: [{
+            ticket: { type: String },
+            symbol: { type: String },
+            direction: { type: String, enum: ["long", "short"] },
+            volume: { type: Number },
+            openPrice: { type: Number },
+            currentPrice: { type: Number },
+            unrealizedPnl: { type: Number },
+            sl: { type: Number },
+            tp: { type: Number },
+            openTime: { type: Date },
+        }],
+        fundedLiveUpdatedAt: { type: Date },
     },
 }, { timestamps: true });
 

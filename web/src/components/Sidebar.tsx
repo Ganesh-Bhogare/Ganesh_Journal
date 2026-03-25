@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { LogOut, LayoutDashboard, BarChart3, TrendingUp, FileText, Settings, Calculator, Calendar, Sparkles, Newspaper, X } from 'lucide-react'
+import { LogOut, LayoutDashboard, BarChart3, TrendingUp, FileText, Settings, Calculator, Calendar, Sparkles, Newspaper, X, Landmark } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 type SidebarProps = {
@@ -21,6 +21,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         { to: '/trades', label: 'Trades', icon: TrendingUp },
         { to: '/calendar', label: 'Calendar', icon: Calendar },
         { to: '/news', label: 'News', icon: Newspaper },
+        { to: '/funded-account', label: 'Funded Account', icon: Landmark },
         { to: '/risk-calculator', label: 'Risk Calculator', icon: Calculator },
         { to: '/notes', label: 'Notes', icon: FileText },
         { to: '/settings', label: 'Settings', icon: Settings }

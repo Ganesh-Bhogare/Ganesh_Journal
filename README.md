@@ -210,6 +210,57 @@ Optional (AI):
 - The `render:build` script installs dependencies in `server/` and `web/` explicitly (avoids npm workspace issues in some build environments).
 - If you deploy frontend and backend as separate services instead, set `VITE_API_URL` in the frontend build env to your backend URL (e.g. `https://your-api.onrender.com/api`) and set `CORS_ORIGIN` on the backend.
 
+## 🔌 Funded Account Read-only Auto Sync (MT5)
+
+This app now supports **read-only funded sync** from a local MT5 terminal bridge. It auto-imports closed trades into your journal.
+
+### 1. Backend token setup
+
+In `server/.env` add:
+
+```env
+FUNDED_BRIDGE_TOKEN=your-long-random-token
+```
+
+### 2. Bridge env setup
+
+Copy:
+
+`server/src/scripts/funded_bridge.env.example` -> `server/src/scripts/funded_bridge.env`
+
+Then fill your MT5 login/server/password and token.
+
+### 3. Install Python deps (bridge machine)
+
+```bash
+pip install MetaTrader5 requests
+```
+
+### 4. Run bridge
+
+One-time sync:
+
+```bash
+python server/src/scripts/mt5_readonly_bridge.py --once
+```
+
+Continuous sync loop:
+
+```bash
+python server/src/scripts/mt5_readonly_bridge.py
+```
+
+### 5. Endpoint used by bridge
+
+- `POST /api/funded/sync-readonly`
+- Header: `x-bridge-token: FUNDED_BRIDGE_TOKEN`
+
+### Security notes
+
+- Bridge is read-only sync only.
+- No execution route is used.
+- Keep token secret and rotate periodically.
+
 ## 🎨 UI Features
 
 ### 3D Animations

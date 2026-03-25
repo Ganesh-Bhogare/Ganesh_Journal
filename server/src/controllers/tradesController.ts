@@ -135,7 +135,7 @@ function calculateTradeMetrics(data: any) {
     const { direction, entryPrice, exitPrice, stopLoss, lotSize, instrument } = data;
 
     // Calculate P&L if exitPrice exists
-    if ((data.pnl === undefined || data.pnl === null) && exitPrice && entryPrice && lotSize) {
+    if (exitPrice && entryPrice && lotSize) {
         const mult = pipMultiplierForInstrument(String(instrument || ""));
         const pips = direction === 'long'
             ? (exitPrice - entryPrice) * mult

@@ -40,16 +40,10 @@ export default function Trades() {
     }
 
     const estimatePnl = (trade: any) => {
-        if (typeof trade?.pnl === 'number' && Number.isFinite(trade.pnl)) {
-            return { value: trade.pnl as number, projected: false }
-        }
-
         const entry = Number(trade?.entryPrice)
         const lot = Number(trade?.lotSize)
         const direction = String(trade?.direction || '').toLowerCase()
-        if (!Number.isFinite(entry) || !Number.isFinite(lot) || lot <= 0 || (direction !== 'long' && direction !== 'short')) {
-            return { value: undefined as number | undefined, projected: false }
-        }
+        const canDerive = Number.isFinite(entry) && Number.isFinite(lot) && lot > 0 && (direction === 'long' || direction === 'short')
 
         const target = Number.isFinite(Number(trade?.exitPrice))
             ? Number(trade.exitPrice)
@@ -57,7 +51,21 @@ export default function Trades() {
                 ? Number(trade.takeProfit)
                 : undefined
 
-        if (target === undefined) return { value: undefined as number | undefined, projected: false }
+        // Closed trade: always trust derived realized P&L over stored stale value.
+        if (Number.isFinite(Number(trade?.exitPrice)) && canDerive) {
+            const mult = pipMultiplierForInstrument(trade?.instrument)
+            const move = direction === 'long' ? (Number(trade.exitPrice) - entry) : (entry - Number(trade.exitPrice))
+            const pips = move * mult
+            const pnl = pips * lot * 10
+            return { value: Number.isFinite(pnl) ? pnl : undefined, projected: false }
+        }
+
+        // Open trade: use stored pnl if present, else TP-based projected estimate.
+        if (typeof trade?.pnl === 'number' && Number.isFinite(trade.pnl)) {
+            return { value: trade.pnl as number, projected: false }
+        }
+
+        if (target === undefined || !canDerive) return { value: undefined as number | undefined, projected: false }
 
         const mult = pipMultiplierForInstrument(trade?.instrument)
         const move = direction === 'long' ? (target - entry) : (entry - target)

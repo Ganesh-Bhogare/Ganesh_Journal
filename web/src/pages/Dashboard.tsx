@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme, type AccentTheme } from '../contexts/ThemeContext'
-import { TrendingUp, Target, Award, TrendingDown, Clock, Calendar as CalendarIcon, Layers, Activity, Sparkles, ArrowUpRight } from 'lucide-react'
+import { TrendingUp, Target, Award, TrendingDown, Clock, Calendar as CalendarIcon, Layers, Activity, Sparkles, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
@@ -20,19 +20,22 @@ export default function Dashboard() {
     const [recentTrades, setRecentTrades] = useState<any[]>([])
     const [allTrades, setAllTrades] = useState<any[]>([])
     const [distributions, setDistributions] = useState<any>(null)
+    const [fundedStatus, setFundedStatus] = useState<any>(null)
 
     const fetchData = async () => {
         try {
-            const [kpisRes, tradesRes, allTradesRes, distRes] = await Promise.all([
+            const [kpisRes, tradesRes, allTradesRes, distRes, fundedRes] = await Promise.all([
                 api.get('/analytics/kpis').catch(e => ({ data: null })),
                 api.get('/trades?limit=5').catch(e => ({ data: { items: [] } })),
                 api.get('/trades?limit=1000').catch(e => ({ data: { items: [] } })),
-                api.get('/analytics/distributions').catch(e => ({ data: null }))
+                api.get('/analytics/distributions').catch(e => ({ data: null })),
+                api.get('/funded/status').catch(e => ({ data: null }))
             ])
             setKpis(kpisRes.data)
             setRecentTrades(tradesRes.data?.items || [])
             setAllTrades(allTradesRes.data?.items || [])
             setDistributions(distRes.data)
+            setFundedStatus(fundedRes.data)
         } catch (err) {
             console.error('Failed to fetch data:', err)
         }
@@ -119,13 +122,13 @@ export default function Dashboard() {
         return acc
     }, {} as Record<string, { win: number; loss: number; trades: number; netPnl: number }>)
 
-    const dailyPnLData = Object.entries(dailyPnL)
-        .map(([date, data]) => ({ date, ...data }))
+    const dailyPnLData = Object.keys(dailyPnL)
+        .map((date) => ({ date, ...dailyPnL[date] }))
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(-7) // Last 7 days
 
     // Best and worst days
-    const dailyEntries = Object.entries(dailyPnL).map(([date, data]) => ({ date, ...data }))
+    const dailyEntries = Object.keys(dailyPnL).map((date) => ({ date, ...dailyPnL[date] }))
     const bestDay = dailyEntries.reduce((best, day) => day.netPnl > (best?.netPnl || -Infinity) ? day : best, dailyEntries[0])
     const worstDay = dailyEntries.reduce((worst, day) => day.netPnl < (worst?.netPnl || Infinity) ? day : worst, dailyEntries[0])
 
@@ -268,6 +271,12 @@ export default function Dashboard() {
         { key: 'neo-black', label: 'Neo Black', swatch: 'linear-gradient(135deg,#3f3f46,#a1a1aa)' },
     ]
 
+    const funded = fundedStatus?.funded
+    const fundedSync = fundedStatus?.sync
+    const fundedEnabled = Boolean(funded?.enabled)
+    const fundedRecent = Array.isArray(fundedSync?.recent) ? fundedSync.recent : []
+    const fundedLastSync = fundedSync?.lastSyncedAt ? new Date(fundedSync.lastSyncedAt).toLocaleString() : 'Never'
+
     return (
         <div className="space-y-6">
             <AnimatedCard delay={0.02} className="p-4 md:p-5">
@@ -395,6 +404,75 @@ export default function Dashboard() {
                 </div>
             </motion.div>
 
+            <AnimatedCard delay={0.08} className="p-4 md:p-5">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div>
+                        <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-100">
+                            <ShieldCheck size={16} className="text-cyan-300" />
+                            Funded Account Link
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                            Read-only sync health, latest import timestamp, and recent funded trades.
+                        </div>
+                    </div>
+                    <button
+                        onClick={fetchData}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-700/60 text-white hover:bg-blue-900/35 transition-colors text-sm"
+                    >
+                        Refresh Feed <ArrowUpRight size={14} />
+                    </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-slate-400 text-xs">Link Status</div>
+                        <div className="mt-1 font-semibold inline-flex items-center gap-2">
+                            {fundedEnabled ? <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" /> : <AlertTriangle size={14} className="text-amber-300" />}
+                            {fundedEnabled ? 'Connected (Read-only)' : 'Not linked'}
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-slate-400 text-xs">Provider / Terminal</div>
+                        <div className="mt-1 font-semibold">{funded?.provider || 'N/A'} / {(funded?.terminalType || 'mt5').toUpperCase()}</div>
+                    </div>
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-slate-400 text-xs">Total Synced Trades</div>
+                        <div className="mt-1 font-semibold">{fundedSync?.totalSynced ?? 0}</div>
+                    </div>
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-slate-400 text-xs">Last Sync</div>
+                        <div className="mt-1 font-semibold">{fundedLastSync}</div>
+                    </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-neutral-800/70 bg-neutral-950/40 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs uppercase tracking-wide text-slate-400">Recent Funded Imports</div>
+                        <div className="text-xs text-slate-500">Account: {funded?.accountId || 'N/A'}</div>
+                    </div>
+                    {fundedRecent.length > 0 ? (
+                        <div className="space-y-2">
+                            {fundedRecent.map((trade: any) => (
+                                <div key={trade.externalTradeId || trade._id} className="flex items-center justify-between rounded-lg border border-neutral-800/80 px-3 py-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-slate-200">{trade.instrument || 'N/A'}</span>
+                                        <span className={`px-1.5 py-0.5 rounded ${trade.direction === 'long' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                                            {(trade.direction || 'na').toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div className="text-slate-400">{trade.updatedAt ? new Date(trade.updatedAt).toLocaleString() : '-'}</div>
+                                    <div className={`font-semibold ${(trade.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {(trade.pnl || 0) >= 0 ? '+' : ''}${Number(trade.pnl || 0).toFixed(2)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-xs text-slate-500">No funded trades synced yet. Configure funded link in Settings and run the bridge script.</div>
+                    )}
+                </div>
+            </AnimatedCard>
+
             {/* KPI Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
@@ -449,7 +527,7 @@ export default function Dashboard() {
                                             borderRadius: '8px',
                                             color: '#fff'
                                         }}
-                                        formatter={(value: number) => [`$${value.toFixed(2)}`, 'P&L']}
+                                        formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, 'P&L']}
                                     />
                                     <Bar dataKey="pnl" fill="#10b981" radius={[0, 4, 4, 0]} />
                                 </BarChart>
@@ -481,7 +559,7 @@ export default function Dashboard() {
                                             borderRadius: '8px',
                                             color: '#fff'
                                         }}
-                                        formatter={(value: number) => `$${value.toFixed(2)}`}
+                                        formatter={(value: any) => `$${Number(value || 0).toFixed(2)}`}
                                     />
                                     <Bar dataKey="win" fill="#10b981" radius={[4, 4, 0, 0]} />
                                     <Bar dataKey="loss" fill="#ef4444" radius={[4, 4, 0, 0]} />
@@ -624,7 +702,7 @@ export default function Dashboard() {
                                                 color: '#fff'
                                             }}
                                             labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                                            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Cumulative']}
+                                            formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, 'Cumulative']}
                                         />
                                         <Line
                                             type="monotone"
@@ -679,7 +757,7 @@ export default function Dashboard() {
                                                 color: '#fff'
                                             }}
                                             labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                                            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Cumulative']}
+                                            formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, 'Cumulative']}
                                         />
                                         <Line
                                             type="monotone"

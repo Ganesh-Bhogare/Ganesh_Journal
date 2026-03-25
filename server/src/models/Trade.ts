@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+function pipMultiplierForInstrument(instrument: string) {
+    const sym = (instrument || "").toUpperCase();
+    if (sym.includes("XAU") || sym.includes("XAG")) return 10;
+    if (sym.endsWith("JPY")) return 100;
+    return 10000;
+}
+
 export type Direction = "long" | "short";
 export type Market = "Forex" | "Crypto" | "Indian Equity" | "Indian Futures" | "Indian Options" | "Commodities" | "Indices" | "Other" | string;
 export type Session = string;
@@ -101,6 +108,10 @@ export interface ITrade extends Document {
     // Notes
     notes?: string;
 
+    // External sync identifiers
+    source?: string;
+    externalTradeId?: string;
+
     // Legacy fields for backwards compatibility
     tags?: string[];
     timeframe?: string;
@@ -199,6 +210,10 @@ const TradeSchema = new Schema<ITrade>({
     // Notes
     notes: { type: String },
 
+    // External sync identifiers
+    source: { type: String },
+    externalTradeId: { type: String, index: true },
+
     // Legacy fields
     tags: [{ type: String }],
     timeframe: { type: String },
@@ -252,7 +267,8 @@ TradeSchema.pre('save', function (next) {
 
     // Calculate P&L if we have lot size and it's closed (only if pnl not already set)
     if ((trade.pnl === undefined || trade.pnl === null) && trade.exitPrice && trade.lotSize) {
-        const pips = Math.abs(trade.exitPrice - trade.entryPrice) * 10000; // for forex pairs
+        const mult = pipMultiplierForInstrument(String(trade.instrument || ""));
+        const pips = Math.abs(trade.exitPrice - trade.entryPrice) * mult;
         const multiplier = trade.direction === 'long' ?
             (trade.exitPrice > trade.entryPrice ? 1 : -1) :
             (trade.exitPrice < trade.entryPrice ? 1 : -1);

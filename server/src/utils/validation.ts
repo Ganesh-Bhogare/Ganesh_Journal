@@ -30,6 +30,14 @@ export const userPreferencesSchema = z.object({
     maxTradesPerDay: z.coerce.number().int().positive().optional(),
     stopAfterLosses: z.coerce.number().int().positive().optional(),
     enforcement: z.enum(["warn", "block"]).optional(),
+
+    // Funded account bridge (read-only)
+    fundedReadOnlyEnabled: z.boolean().optional(),
+    fundedProvider: z.string().min(1).max(80).optional(),
+    fundedTerminalType: z.enum(["mt4", "mt5", "other"]).optional(),
+    fundedAccountId: z.string().min(1).max(80).optional(),
+    fundedServer: z.string().min(1).max(120).optional(),
+    fundedExecutionEnabled: z.boolean().optional(),
 });
 
 export const tradeSchema = z.object({
