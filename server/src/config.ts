@@ -6,9 +6,13 @@ import path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
+const isProduction = process.env.NODE_ENV === "production";
+const mongoUriFromEnv = (process.env.MONGO_URI || "").trim();
+
 export const config = {
     port: parseInt(process.env.PORT || "4000", 10),
-    mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/ganesh_journal",
+    // In production (Render), require a real cloud Mongo URI and never fallback to localhost.
+    mongoUri: isProduction ? mongoUriFromEnv : (mongoUriFromEnv || "mongodb://localhost:27017/ganesh_journal"),
     jwtSecret: process.env.JWT_SECRET || "change-me",
     uploadDir: process.env.UPLOAD_DIR || "uploads",
     uploadDirAbs: "",
@@ -56,6 +60,10 @@ export const config = {
     // Funded read-only terminal bridge
     fundedBridgeToken: process.env.FUNDED_BRIDGE_TOKEN || "",
 };
+
+if (isProduction && !config.mongoUri) {
+    throw new Error("MONGO_URI is required in production. Set it in Render Environment variables.");
+}
 
 // Resolve upload directory relative to the server workspace (stable across environments)
 const serverWorkspaceRoot = path.resolve(__dirname, "..");

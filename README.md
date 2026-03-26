@@ -148,7 +148,7 @@ npm install
 **Backend** (`server/.env`):
 ```env
 PORT=4000
-MONGO_URI=mongodb://127.0.0.1:27017/ganesh_journal
+MONGO_URI=mongodb+srv://<db_user>:<db_password>@<cluster-host>/ganesh_journal?retryWrites=true&w=majority&appName=TradeJournal
 JWT_SECRET=your-super-secret-key-change-this
 UPLOAD_DIR=uploads
 CORS_ORIGIN=http://localhost:5173
@@ -209,6 +209,7 @@ Optional (AI):
 - Frontend API base URL defaults to `/api` in production, so it works when served by the backend.
 - The `render:build` script installs dependencies in `server/` and `web/` explicitly (avoids npm workspace issues in some build environments).
 - If you deploy frontend and backend as separate services instead, set `VITE_API_URL` in the frontend build env to your backend URL (e.g. `https://your-api.onrender.com/api`) and set `CORS_ORIGIN` on the backend.
+- Local MongoDB (`mongodb://127.0.0.1:27017/...`) will not work on Render. Use a cloud Mongo URI (MongoDB Atlas) in `MONGO_URI`.
 
 ## 🔌 Funded Account Read-only Auto Sync (MT5)
 

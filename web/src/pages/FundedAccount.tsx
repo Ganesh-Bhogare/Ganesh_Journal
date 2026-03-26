@@ -135,10 +135,13 @@ export default function FundedAccount() {
     const recent = Array.isArray(sync?.recent) ? sync?.recent : []
     const live = data?.live
     const openPositions = Array.isArray(live?.openPositions) ? live.openPositions : []
+    const mappingReady = Boolean(funded?.enabled && String(funded?.accountId || '').trim())
 
     const statusLabel = useMemo(() => {
-        return funded?.enabled ? 'Connected (Read-only)' : 'Not linked'
-    }, [funded?.enabled])
+        if (!funded?.enabled) return 'Not linked'
+        if (!mappingReady) return 'Enabled, mapping incomplete'
+        return 'Connected (Read-only)'
+    }, [funded?.enabled, mappingReady])
 
     const lastSyncLabel = useMemo(() => {
         return sync?.lastSyncedAt ? new Date(sync.lastSyncedAt).toLocaleString() : 'Never'
@@ -271,7 +274,7 @@ export default function FundedAccount() {
                 <AnimatedCard delay={0.08} className="p-4">
                     <div className="text-xs text-slate-400">Link Status</div>
                     <div className="mt-2 text-sm font-semibold inline-flex items-center gap-2">
-                        {funded?.enabled ? <CheckCircle2 size={15} className="text-green-400" /> : <AlertTriangle size={15} className="text-amber-300" />}
+                        {mappingReady ? <CheckCircle2 size={15} className="text-green-400" /> : <AlertTriangle size={15} className="text-amber-300" />}
                         {statusLabel}
                     </div>
                 </AnimatedCard>

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { X, Upload, TrendingUp, TrendingDown } from 'lucide-react'
 import GradientButton from './GradientButton'
 import { api } from '../lib/api'
+import { isoToIstInputValue, istInputToIso, nowIstInputValue } from '../lib/istDate'
 
 interface TradeFormProps {
     onClose: () => void
@@ -43,7 +44,7 @@ const labelStyle = {
 
 export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps) {
     const [formData, setFormData] = useState({
-        date: trade?.date ? new Date(trade.date).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+        date: trade?.date ? isoToIstInputValue(trade.date) : nowIstInputValue(),
         instrument: trade?.instrument || 'EURUSD',
         direction: trade?.direction || 'long',
         entryPrice: trade?.entryPrice || '',
@@ -67,6 +68,7 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
         try {
             const tradeData = {
                 ...formData,
+                date: istInputToIso(formData.date) || new Date().toISOString(),
                 entryPrice: parseFloat(formData.entryPrice as string),
                 exitPrice: formData.exitPrice ? parseFloat(formData.exitPrice as string) : undefined,
                 stopLoss: formData.stopLoss ? parseFloat(formData.stopLoss as string) : undefined,

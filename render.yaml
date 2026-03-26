@@ -10,9 +10,11 @@ services:
         value: production
       - key: SERVE_WEB
         value: "true"
-      # Set these in the Render dashboard as needed:
-      # - MONGO_URI
-      # - JWT_SECRET
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      # Optional (set in dashboard if needed):
       # - OPENAI_API_KEY
       # - OPENAI_MODEL
       # - OPENAI_BASE_URL

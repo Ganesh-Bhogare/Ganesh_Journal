@@ -14,12 +14,17 @@ export async function getTrade(req: Request & { userId?: string }, res: Response
     }
 }
 
-function startOfDayUtc(d: Date) {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+const IST_OFFSET_MINUTES = 330;
+const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
+
+function startOfDayIstAsUtc(d: Date) {
+    const ist = new Date(d.getTime() + IST_OFFSET_MS);
+    return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 0, 0, 0, 0) - IST_OFFSET_MS);
 }
 
-function endOfDayUtc(d: Date) {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0, 0));
+function endOfDayIstAsUtc(d: Date) {
+    const ist = new Date(d.getTime() + IST_OFFSET_MS);
+    return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 1, 0, 0, 0, 0) - IST_OFFSET_MS);
 }
 
 function pipMultiplierForInstrument(instrument: string) {
@@ -42,8 +47,8 @@ async function applyRiskEngine(userId: string | undefined, tradeLike: any) {
     const enforcement: "warn" | "block" = prefs.enforcement === "warn" ? "warn" : "block";
 
     const d = tradeLike?.date ? new Date(tradeLike.date) : new Date();
-    const dayStart = startOfDayUtc(d);
-    const dayEnd = endOfDayUtc(d);
+    const dayStart = startOfDayIstAsUtc(d);
+    const dayEnd = endOfDayIstAsUtc(d);
 
     const todaysTrades = await Trade.find({
         userId,
@@ -305,14 +310,19 @@ export async function listTrades(req: Request & { userId?: string }, res: Respon
         const page = parseInt((req.query.page as string) || "1", 10);
         const limit = parseInt((req.query.limit as string) || "20", 10);
         const skip = (page - 1) * limit;
+        const sortBy = String((req.query.sort as string) || "date").toLowerCase();
 
         const filters: any = { userId: req.userId };
         if (req.query.instrument) filters.instrument = req.query.instrument;
         if (req.query.direction) filters.direction = req.query.direction;
         if (req.query.tag) filters.tags = req.query.tag;
 
+        const sort: Record<string, 1 | -1> = sortBy === "created"
+            ? { createdAt: -1 }
+            : { date: -1 };
+
         const [items, total] = await Promise.all([
-            Trade.find(filters).sort({ date: -1 }).skip(skip).limit(limit),
+            Trade.find(filters).sort(sort).skip(skip).limit(limit),
             Trade.countDocuments(filters),
         ]);
 

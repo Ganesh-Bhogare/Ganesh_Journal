@@ -124,9 +124,31 @@ def read_config() -> BridgeConfig:
 
 
 def initialize_mt5(cfg: BridgeConfig) -> None:
-    ok = mt5.initialize(path=cfg.mt5_path) if cfg.mt5_path else mt5.initialize()
+    # Try explicit path first, then default init, then common Windows install paths.
+    candidate_paths: List[Optional[str]] = []
+    if cfg.mt5_path:
+        candidate_paths.append(cfg.mt5_path)
+    candidate_paths.append(None)
+    candidate_paths.extend([
+        "C:/Program Files/MetaTrader 5/terminal64.exe",
+        "C:/Program Files/MetaTrader 5/terminal.exe",
+        "C:/Program Files (x86)/MetaTrader 5/terminal64.exe",
+        "C:/Program Files (x86)/MetaTrader 5/terminal.exe",
+    ])
+
+    ok = False
+    for p in candidate_paths:
+        ok = mt5.initialize(path=p) if p else mt5.initialize()
+        if ok:
+            break
+
     if not ok:
-        raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
+        err = mt5.last_error()
+        raise RuntimeError(
+            "MT5 initialize failed: "
+            f"{err}. Ensure MetaTrader 5 desktop terminal is installed/open, "
+            "or set MT5_PATH in funded_bridge.env to terminal64.exe"
+        )
 
     authorized = mt5.login(cfg.mt5_login, password=cfg.mt5_password, server=cfg.mt5_server)
     if not authorized:

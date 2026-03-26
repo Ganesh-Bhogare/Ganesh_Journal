@@ -13,6 +13,16 @@ function toNum(v: any): number | undefined {
     return Number.isFinite(n) ? n : undefined;
 }
 
+function roundNum(v: number | undefined, digits: number): number | undefined {
+    if (v === undefined) return undefined;
+    const factor = Math.pow(10, digits);
+    return Math.round(v * factor) / factor;
+}
+
+function normalizeText(v: any): string {
+    return String(v || "").trim().toLowerCase();
+}
+
 function inferMarket(symbol: string): string {
     const s = String(symbol || "").toUpperCase();
     if (s.includes("BTC") || s.includes("ETH") || s.includes("USDT")) return "Crypto";
@@ -26,6 +36,13 @@ function mapDirection(side: string): "long" | "short" | undefined {
     if (s === "buy" || s === "long") return "long";
     if (s === "sell" || s === "short") return "short";
     return undefined;
+}
+
+function inferSessionFromUtc(time: Date): "Asia" | "London" | "New York" {
+    const h = time.getUTCHours();
+    if (h >= 13 && h < 21) return "New York";
+    if (h >= 7 && h < 16) return "London";
+    return "Asia";
 }
 
 export async function getFundedStatus(req: Request & { userId?: string }, res: Response) {
@@ -90,14 +107,28 @@ export async function fundedReadOnlySync(req: Request, res: Response) {
             return res.status(400).json({ error: "Provide trades or openPositions" });
         }
 
-        const user = await User.findOne({
+        const candidates = await User.find({
             "preferences.fundedReadOnlyEnabled": true,
             "preferences.fundedAccountId": accountId,
-            ...(serverName ? { "preferences.fundedServer": serverName } : {}),
         }).select("_id preferences");
 
+        let user = null as any;
+        if (candidates.length === 1) {
+            user = candidates[0];
+        } else if (candidates.length > 1) {
+            const normalizedIncomingServer = normalizeText(serverName);
+            user = candidates.find((u: any) => normalizeText(u?.preferences?.fundedServer) === normalizedIncomingServer) || null;
+        }
+
         if (!user) {
-            return res.status(404).json({ error: "No read-only linked user found for this account" });
+            return res.status(404).json({
+                error: "No read-only linked user found for this account",
+                details: {
+                    accountId,
+                    server: serverName || null,
+                    candidates: candidates.length,
+                },
+            });
         }
 
         const created: string[] = [];
@@ -112,7 +143,7 @@ export async function fundedReadOnlySync(req: Request, res: Response) {
             const closeTime = parseIso(t?.closeTime || t?.exitTime);
             const openPrice = toNum(t?.openPrice || t?.entryPrice);
             const closePrice = toNum(t?.closePrice || t?.exitPrice);
-            const lotSize = toNum(t?.volume || t?.lotSize);
+            const lotSize = roundNum(toNum(t?.volume ?? t?.lotSize), 4);
 
             if (!ticket || !symbol || !direction || !openTime || openPrice === undefined) {
                 skipped.push(ticket || "unknown");
@@ -122,9 +153,7 @@ export async function fundedReadOnlySync(req: Request, res: Response) {
             const externalTradeId = `${accountId}:${ticket}`;
 
             const pnl = toNum(t?.profit);
-            const swap = toNum(t?.swap) || 0;
-            const commission = toNum(t?.commission) || 0;
-            const netPnl = pnl !== undefined ? pnl + swap + commission : undefined;
+            const normalizedPnl = roundNum(pnl, 2);
 
             const payload: any = {
                 userId: user._id,
@@ -132,16 +161,17 @@ export async function fundedReadOnlySync(req: Request, res: Response) {
                 externalTradeId,
                 date: openTime,
                 entryTime: openTime,
+                session: inferSessionFromUtc(openTime),
                 market: inferMarket(symbol),
                 instrument: symbol,
                 direction,
-                entryPrice: openPrice,
-                stopLoss: toNum(t?.sl || t?.stopLoss),
-                takeProfit: toNum(t?.tp || t?.takeProfit),
+                entryPrice: roundNum(openPrice, 5),
+                stopLoss: roundNum(toNum(t?.sl ?? t?.stopLoss), 5),
+                takeProfit: roundNum(toNum(t?.tp ?? t?.takeProfit), 5),
                 lotSize,
                 exitTime: closeTime,
-                exitPrice: closePrice,
-                pnl: netPnl,
+                exitPrice: roundNum(closePrice, 5),
+                pnl: normalizedPnl,
                 notes: `Auto-synced from ${provider}${serverName ? ` (${serverName})` : ""}. Ticket: ${ticket}`,
                 tags: [symbol, "synced:funded", `account:${accountId}`],
             };
@@ -168,12 +198,12 @@ export async function fundedReadOnlySync(req: Request, res: Response) {
                     ticket,
                     symbol,
                     direction,
-                    volume: toNum(p?.volume || p?.lotSize),
-                    openPrice: toNum(p?.openPrice || p?.entryPrice),
-                    currentPrice: toNum(p?.currentPrice || p?.markPrice),
-                    unrealizedPnl: toNum(p?.unrealizedPnl || p?.profit),
-                    sl: toNum(p?.sl || p?.stopLoss),
-                    tp: toNum(p?.tp || p?.takeProfit),
+                    volume: roundNum(toNum(p?.volume ?? p?.lotSize), 4),
+                    openPrice: roundNum(toNum(p?.openPrice ?? p?.entryPrice), 5),
+                    currentPrice: roundNum(toNum(p?.currentPrice ?? p?.markPrice), 5),
+                    unrealizedPnl: roundNum(toNum(p?.unrealizedPnl ?? p?.profit), 2),
+                    sl: roundNum(toNum(p?.sl ?? p?.stopLoss), 5),
+                    tp: roundNum(toNum(p?.tp ?? p?.takeProfit), 5),
                     openTime: parseIso(p?.openTime || p?.entryTime || p?.date),
                 };
             })

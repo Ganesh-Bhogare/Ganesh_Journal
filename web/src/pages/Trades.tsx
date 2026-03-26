@@ -8,6 +8,7 @@ import ICTTradeForm from '../components/ICTTradeForm'
 import TradingViewEmbed from '../components/TradingViewEmbed'
 import { api } from '../lib/api'
 import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
+import { formatIstDate, formatIstDateTime } from '../lib/istDate'
 
 export default function Trades() {
     const navigate = useNavigate()
@@ -44,6 +45,11 @@ export default function Trades() {
         const lot = Number(trade?.lotSize)
         const direction = String(trade?.direction || '').toLowerCase()
         const canDerive = Number.isFinite(entry) && Number.isFinite(lot) && lot > 0 && (direction === 'long' || direction === 'short')
+
+        // Funded provider values are broker-calculated; keep broker P&L for accuracy.
+        if (trade?.source === 'funded-readonly' && typeof trade?.pnl === 'number' && Number.isFinite(trade.pnl)) {
+            return { value: trade.pnl as number, projected: false }
+        }
 
         const target = Number.isFinite(Number(trade?.exitPrice))
             ? Number(trade.exitPrice)
@@ -715,7 +721,7 @@ export default function Trades() {
                                                 transition={{ delay: i * 0.05 }}
                                                 className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
                                             >
-                                                <td className="py-3 text-sm">{new Date(trade.date).toLocaleDateString()}</td>
+                                                <td className="py-3 text-sm">{formatIstDate(trade.date)}</td>
                                                 <td className="py-3 font-semibold">{trade.instrument}</td>
                                                 <td className="py-3">
                                                     {trade.direction === 'long' ? (
@@ -732,7 +738,7 @@ export default function Trades() {
                                                 <td className="py-3 text-sm">{trade.exitPrice?.toFixed(5) || '-'}</td>
                                                 <td className="py-3 text-sm text-red-400">{trade.stopLoss?.toFixed(5) || '-'}</td>
                                                 <td className="py-3 text-sm text-green-400">{trade.takeProfit?.toFixed(5) || '-'}</td>
-                                                <td className="py-3 text-sm">{trade.lotSize || '-'}</td>
+                                                <td className="py-3 text-sm">{Number.isFinite(Number(trade.lotSize)) ? Number(trade.lotSize).toFixed(2) : '-'}</td>
                                                 <td className={`py-3 font-semibold ${isPos ? 'text-green-500' : 'text-red-500'}`}>
                                                     {typeof pnlVal === 'number'
                                                         ? `${pnlInfo.projected ? '~' : ''}$${pnlVal.toFixed(2)}`
@@ -808,7 +814,7 @@ export default function Trades() {
                             <div>
                                 <div className="text-2xl font-bold">{viewingTrade.instrument} • {String(viewingTrade.direction || '').toUpperCase()}</div>
                                 <div className="text-neutral-400 text-sm">
-                                    {viewingTrade.date ? new Date(viewingTrade.date).toLocaleString() : 'No date'}
+                                    {viewingTrade.date ? formatIstDateTime(viewingTrade.date) : 'No date'}
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -930,7 +936,7 @@ export default function Trades() {
                                 </div>
 
                                 <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md border border-neutral-700/70 bg-black/45 px-2 py-1 text-[11px] text-neutral-200">
-                                    Entry Time: {viewingTrade?.entryTime ? new Date(viewingTrade.entryTime).toLocaleString() : (viewingTrade?.date ? new Date(viewingTrade.date).toLocaleString() : '-')}
+                                    Entry Time (IST): {viewingTrade?.entryTime ? formatIstDateTime(viewingTrade.entryTime) : (viewingTrade?.date ? formatIstDateTime(viewingTrade.date) : '-')}
                                 </div>
                             </div>
                             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -951,7 +957,7 @@ export default function Trades() {
                                 <div className="text-neutral-300 text-xs font-semibold mb-2">Trade Location Guide</div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                                     <div className="text-neutral-400">
-                                        Trade Time (UTC): <span className="text-neutral-200">{viewingTrade?.entryTime ? new Date(viewingTrade.entryTime).toISOString() : (viewingTrade?.date ? new Date(viewingTrade.date).toISOString() : '-')}</span>
+                                        Trade Time (IST): <span className="text-neutral-200">{viewingTrade?.entryTime ? formatIstDateTime(viewingTrade.entryTime) : (viewingTrade?.date ? formatIstDateTime(viewingTrade.date) : '-')}</span>
                                     </div>
                                     <div className="text-neutral-400">
                                         Entry Timeframe: <span className="text-neutral-200">{viewingTrade?.entryTimeframe || '-'}</span>

@@ -22,17 +22,35 @@ export default function Dashboard() {
     const [distributions, setDistributions] = useState<any>(null)
     const [fundedStatus, setFundedStatus] = useState<any>(null)
 
+    const getTradeSortTime = (trade: any) => {
+        const created = trade?.createdAt ? new Date(trade.createdAt).getTime() : NaN
+        if (Number.isFinite(created)) return created
+
+        const dated = trade?.date ? new Date(trade.date).getTime() : NaN
+        if (Number.isFinite(dated)) return dated
+
+        // Mongo ObjectId fallback (first 8 hex chars = seconds timestamp)
+        const id = typeof trade?._id === 'string' ? trade._id : ''
+        const hex = id.slice(0, 8)
+        const sec = Number.parseInt(hex, 16)
+        return Number.isFinite(sec) ? sec * 1000 : 0
+    }
+
     const fetchData = async () => {
         try {
             const [kpisRes, tradesRes, allTradesRes, distRes, fundedRes] = await Promise.all([
                 api.get('/analytics/kpis').catch(e => ({ data: null })),
-                api.get('/trades?limit=5').catch(e => ({ data: { items: [] } })),
+                api.get('/trades?limit=100').catch(e => ({ data: { items: [] } })),
                 api.get('/trades?limit=1000').catch(e => ({ data: { items: [] } })),
                 api.get('/analytics/distributions').catch(e => ({ data: null })),
                 api.get('/funded/status').catch(e => ({ data: null }))
             ])
+            const recentSorted = [...(tradesRes.data?.items || [])]
+                .sort((a, b) => getTradeSortTime(b) - getTradeSortTime(a))
+                .slice(0, 5)
+
             setKpis(kpisRes.data)
-            setRecentTrades(tradesRes.data?.items || [])
+            setRecentTrades(recentSorted)
             setAllTrades(allTradesRes.data?.items || [])
             setDistributions(distRes.data)
             setFundedStatus(fundedRes.data)
@@ -43,6 +61,21 @@ export default function Dashboard() {
 
     useEffect(() => {
         fetchData()
+    }, [])
+
+    useEffect(() => {
+        const onFocus = () => { fetchData() }
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') fetchData()
+        }
+
+        window.addEventListener('focus', onFocus)
+        document.addEventListener('visibilitychange', onVisibility)
+
+        return () => {
+            window.removeEventListener('focus', onFocus)
+            document.removeEventListener('visibilitychange', onVisibility)
+        }
     }, [])
 
     const winLossData = kpis ? [

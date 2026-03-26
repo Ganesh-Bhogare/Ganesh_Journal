@@ -5,6 +5,7 @@ import GradientButton from './GradientButton'
 import TradingViewEmbed from './TradingViewEmbed'
 import { api } from '../lib/api'
 import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
+import { formatIstDateTime, isoToIstInputValue, istInputToIso, nowIstInputValue } from '../lib/istDate'
 
 interface ICTTradeFormProps {
     onClose: () => void
@@ -92,7 +93,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
 
     const [formData, setFormData] = useState({
         // Basic Info
-        date: trade?.date ? new Date(trade.date).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+        date: trade?.date ? isoToIstInputValue(trade.date) : nowIstInputValue(),
         market: trade?.market || 'Forex',
         strategyStyle: trade?.strategyStyle || (trade?.setupType ? 'ICT' : 'Non-ICT'),
         instrument: trade?.instrument || 'XAUUSD',
@@ -114,13 +115,14 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         pdArrays: trade?.pdArrays || [],
 
         // Entry Execution
-        entryTime: trade?.entryTime ? new Date(trade.entryTime).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+        entryTime: trade?.entryTime ? isoToIstInputValue(trade.entryTime) : nowIstInputValue(),
         entryTimeframe: trade?.entryTimeframe || '5m',
         entryConfirmation: trade?.entryConfirmation || 'MSS',
         entryPrice: trade?.entryPrice || '',
         stopLoss: trade?.stopLoss || '',
         takeProfit: trade?.takeProfit || '',
         riskPerTrade: trade?.riskPerTrade || '50',
+        lotSize: trade?.lotSize !== undefined && trade?.lotSize !== null ? String(trade.lotSize) : '',
 
         // Trade Management
         partialTaken: trade?.partialTaken || false,
@@ -129,7 +131,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
 
         // Exit (if closed)
         exitPrice: trade?.exitPrice || '',
-        exitTime: trade?.exitTime ? new Date(trade.exitTime).toISOString().slice(0, 16) : '',
+        exitTime: trade?.exitTime ? isoToIstInputValue(trade.exitTime) : '',
 
         // Rule Evaluation
         followedHTFBias: trade?.followedHTFBias !== undefined ? trade.followedHTFBias : true,
@@ -173,7 +175,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
             `Entry: ${formData.entryPrice || '-'}`,
             `Stop Loss: ${formData.stopLoss || '-'}`,
             `Take Profit: ${formData.takeProfit || '-'}`,
-            `Trade Time (UTC): ${formData.entryTime ? new Date(formData.entryTime).toISOString() : '-'}`,
+            `Trade Time (IST): ${formData.entryTime ? formatIstDateTime(istInputToIso(formData.entryTime)) : '-'}`,
             `Entry TF: ${formData.entryTimeframe || '-'}`,
             `RR: ${rrPreview > 0 ? rrPreview.toFixed(2) : '-'}`
         ].join('\n')
@@ -247,6 +249,10 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         setLoading(true)
 
         try {
+            const dateIso = istInputToIso(formData.date) || new Date().toISOString()
+            const entryTimeIso = istInputToIso(formData.entryTime) || dateIso
+            const exitTimeIso = istInputToIso(formData.exitTime)
+
             const tradeData = {
                 ...formData,
                 strategyName: formData.strategyStyle === 'ICT' ? undefined : (formData.strategyName || undefined),
@@ -262,14 +268,15 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                 stopLoss: parseFloat(formData.stopLoss as string),
                 takeProfit: parseFloat(formData.takeProfit as string),
                 riskPerTrade: parseFloat(formData.riskPerTrade as string),
+                lotSize: formData.lotSize ? parseFloat(formData.lotSize as string) : undefined,
                 exitPrice: formData.exitPrice ? parseFloat(formData.exitPrice as string) : undefined,
                 mae: formData.mae ? parseFloat(formData.mae as string) : undefined,
                 mfe: formData.mfe ? parseFloat(formData.mfe as string) : undefined,
                 htfLevelUsed: formData.htfLevelUsed ? String(formData.htfLevelUsed) : undefined,
                 ltfConfirmationQuality: formData.ltfConfirmationQuality ? String(formData.ltfConfirmationQuality) : undefined,
-                date: new Date(formData.date).toISOString(),
-                entryTime: new Date(formData.entryTime).toISOString(),
-                exitTime: formData.exitTime ? new Date(formData.exitTime).toISOString() : undefined
+                date: dateIso,
+                entryTime: entryTimeIso,
+                exitTime: exitTimeIso
                 ,
                 chartConfig: {
                     symbol: chartSymbol,
@@ -851,6 +858,17 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                     placeholder="50"
                                                 />
                                             </div>
+                                            <div>
+                                                <label style={labelStyle}>Lot Size (Optional)</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={formData.lotSize}
+                                                    onChange={(e) => setFormData({ ...formData, lotSize: e.target.value })}
+                                                    style={inputStyle}
+                                                    placeholder="e.g., 0.35"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
@@ -993,7 +1011,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                                 </div>
                                             </div>
                                             <div style={{ marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
-                                                Trade Time (UTC): {formData.entryTime ? new Date(formData.entryTime).toISOString() : '-'} | Entry TF: {formData.entryTimeframe || '-'}
+                                                Trade Time (IST): {formData.entryTime ? formatIstDateTime(istInputToIso(formData.entryTime)) : '-'} | Entry TF: {formData.entryTimeframe || '-'}
                                             </div>
                                         </div>
                                     </div>
