@@ -344,13 +344,16 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
         const avgRR = rrCount ? rrSum / rrCount : 0;
         const avgLoss = losses > 0 ? grossLoss / losses : 0;
 
-        const confidenceForSample = (sample: number) => {
+        const confidenceForSample = (sample: number, prevalenceRate: number) => {
             if (!sample || !total) return 0;
-            const normalized = Math.min(1, sample / Math.max(20, total));
-            return Math.min(0.95, 0.35 + normalized * 0.6);
+            // Confidence should stay low when dataset is tiny, even if a pattern appears in all trades.
+            const sampleFactor = Math.min(1, sample / 20);
+            const datasetFactor = Math.min(1, total / 40);
+            const prevalenceFactor = 0.6 + (0.4 * Math.min(1, prevalenceRate * 2));
+            return Math.min(0.95, 0.12 + (0.83 * sampleFactor * datasetFactor * prevalenceFactor));
         };
 
-        const ruleLabels: Record<string, string> = {
+        const negativeRuleLabels: Record<string, string> = {
             riskRespected: "Risk not respected",
             noEarlyExit: "Early exit (didn't hold plan)",
             validPDArray: "Invalid PD Array",
@@ -358,28 +361,42 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
             followedHTFBias: "HTF bias not followed",
         };
 
+        const positiveRuleLabels: Record<string, string> = {
+            riskRespected: "Risk respected",
+            noEarlyExit: "Held plan (no early exit)",
+            validPDArray: "Valid PD Array",
+            correctSession: "Correct session",
+            followedHTFBias: "HTF bias followed",
+        };
+
         const repeatedMistakes: InsightItem[] = Object.entries(ruleFalseCounts)
-            .map(([key, count]) => ({
-                key,
-                label: ruleLabels[key] || key,
-                count,
-                rate: rate(count, total),
-                evidenceTrades: count,
-                confidence: confidenceForSample(count),
-                estimatedLeak: count * avgLoss,
-            }))
+            .map(([key, count]) => {
+                const itemRate = rate(count, total);
+                return {
+                    key,
+                    label: negativeRuleLabels[key] || key,
+                    count,
+                    rate: itemRate,
+                    evidenceTrades: count,
+                    confidence: confidenceForSample(count, itemRate),
+                    estimatedLeak: count * avgLoss,
+                };
+            })
             .filter((x) => x.count > 0)
             .sort((a, b) => b.count - a.count);
 
         const strengths: InsightItem[] = Object.entries(ruleTrueCounts)
-            .map(([key, count]) => ({
-                key,
-                label: (ruleLabels[key] || key).replace("not ", ""),
-                count,
-                rate: rate(count, total),
-                evidenceTrades: count,
-                confidence: confidenceForSample(count),
-            }))
+            .map(([key, count]) => {
+                const itemRate = rate(count, total);
+                return {
+                    key,
+                    label: positiveRuleLabels[key] || key,
+                    count,
+                    rate: itemRate,
+                    evidenceTrades: count,
+                    confidence: confidenceForSample(count, itemRate),
+                };
+            })
             .filter((x) => x.count > 0)
             .sort((a, b) => b.count - a.count);
 
@@ -398,8 +415,8 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
                     netPnl: s.netPnl,
                     avgRR: s.rrCount ? s.rrSum / s.rrCount : 0,
                     expectancy,
-                    confidence: confidenceForSample(s.trades),
-                    sampleTag: s.trades >= 25 ? "high" : s.trades >= 10 ? "medium" : "low",
+                    confidence: confidenceForSample(s.trades, rate(s.trades, total)),
+                    sampleTag: s.trades >= 25 ? "high" : s.trades >= 10 ? "medium" : s.trades >= 5 ? "low" : "very-low",
                 };
             })
             .sort((a, b) => (b.trades - a.trades) || (b.expectancy - a.expectancy));
@@ -419,6 +436,9 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
         }
         if (recommendations.length === 0) {
             recommendations.push("Keep consistency: focus on your top setup and repeat only A-quality trades.");
+        }
+        if (total < 15) {
+            recommendations.unshift("Sample size is low. Treat diagnostics as directional only until you log at least 15-20 trades.");
         }
 
         const charts = {

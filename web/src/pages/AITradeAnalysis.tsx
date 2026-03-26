@@ -249,6 +249,12 @@ export default function AITradeAnalysis() {
                                 </div>
                             </div>
 
+                            {Number(diagnostics?.tradesAnalyzed || 0) < 15 && (
+                                <div className="text-xs text-yellow-200 border border-yellow-500/30 bg-yellow-500/10 rounded-lg px-3 py-2">
+                                    Low sample size ({diagnostics?.tradesAnalyzed || 0} trades). Confidence is directional only; use at least 15-20 trades for stable diagnostics.
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 <div>
                                     <div className="font-semibold mb-2">Repeated Mistakes</div>
@@ -310,7 +316,13 @@ export default function AITradeAnalysis() {
                                                         <td className="px-3 py-2">{formatMetric(s.avgRR || 0, 2)}</td>
                                                         <td className="px-3 py-2">{formatMetric((s.confidence || 0) * 100, 0)}%</td>
                                                         <td className="px-3 py-2">
-                                                            <span className={`px-2 py-0.5 rounded text-xs ${s.sampleTag === 'high' ? 'bg-green-500/20 text-green-300' : s.sampleTag === 'medium' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-red-500/20 text-red-300'}`}>
+                                                            <span className={`px-2 py-0.5 rounded text-xs ${s.sampleTag === 'high'
+                                                                ? 'bg-green-500/20 text-green-300'
+                                                                : s.sampleTag === 'medium'
+                                                                    ? 'bg-yellow-500/20 text-yellow-300'
+                                                                    : s.sampleTag === 'low'
+                                                                        ? 'bg-orange-500/20 text-orange-300'
+                                                                        : 'bg-red-500/20 text-red-300'}`}>
                                                                 {s.sampleTag}
                                                             </span>
                                                         </td>

@@ -789,6 +789,12 @@ export default function Analytics() {
                                 </div>
                             </div>
 
+                            {Number(ai?.tradesAnalyzed || 0) < 15 && (
+                                <div className="mb-6 text-xs text-yellow-200 border border-yellow-500/30 bg-yellow-500/10 rounded-lg px-3 py-2">
+                                    Low sample size ({ai?.tradesAnalyzed || 0} trades). Confidence scores are directional; journal at least 15-20 trades for stable diagnostics.
+                                </div>
+                            )}
+
                             {aiLeakEstimate.length > 0 && (
                                 <div className="mb-6">
                                     <div className="font-semibold mb-2">Estimated leakage from repeated mistakes</div>
