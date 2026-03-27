@@ -117,6 +117,19 @@ const parser = new Parser({
     timeout: 15_000,
 });
 
+const fallbackNewsFeeds = [
+    "https://news.google.com/rss/search?q=forex+when:7d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=central+bank+when:7d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=USD+EUR+GBP+JPY+when:7d&hl=en-US&gl=US&ceid=US:en",
+];
+
+function toIsoDateSafe(input?: string): string | undefined {
+    if (!input) return undefined;
+    const t = Date.parse(input);
+    if (!Number.isFinite(t)) return undefined;
+    return new Date(t).toISOString();
+}
+
 const feedCache = new Map<
     string,
     {
@@ -131,15 +144,31 @@ async function fetchFeed(url: string): Promise<NewsItem[]> {
     const ttlMs = Math.max(10, config.newsCacheTtlSeconds) * 1000;
     if (cached && now - cached.fetchedAt < ttlMs) return cached.items;
 
-    const feed = await parser.parseURL(url);
+    let feed: Parser.Output<any>;
+    try {
+        const resp = await fetch(url, {
+            headers: {
+                "user-agent": "Mozilla/5.0 (compatible; GaneshJournalBot/1.0; +https://ganesh-journal.onrender.com)",
+                "accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+            },
+        });
+
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status} while fetching feed`);
+        }
+
+        const xml = await resp.text();
+        feed = await parser.parseString(xml);
+    } catch {
+        // Fallback to parser.parseURL because some hosts behave better with parser internals.
+        feed = await parser.parseURL(url);
+    }
     const source = feed.title || new URL(url).hostname;
 
     const items: NewsItem[] = (feed.items || []).map((it) => {
         const title = String(it.title || "").trim();
         const link = it.link ? String(it.link) : undefined;
-        const pub = (it.isoDate || (it.pubDate ? new Date(it.pubDate).toISOString() : undefined)) as
-            | string
-            | undefined;
+        const pub = toIsoDateSafe(it.isoDate) || toIsoDateSafe(it.pubDate);
         const summary = String((it as any).contentSnippet || (it as any).content || (it as any).summary || "").trim();
 
         const combined = `${title}\n${summary}`.toUpperCase();
@@ -165,22 +194,55 @@ export async function getNews(_req: Request & { userId?: string }, res: Response
     try {
         const q = GetNewsQuery.parse(_req.query);
 
-        if (!config.newsFeeds.length) {
-            return res.status(200).json({
-                ok: false,
-                error:
-                    "No news feeds configured. Set NEWS_FEEDS (comma-separated RSS/Atom feed URLs) in server env.",
-                items: [],
-            });
-        }
+        const configuredFeeds = config.newsFeeds.length ? config.newsFeeds : fallbackNewsFeeds;
 
         const limit = Math.min(q.limit ?? config.newsDefaultLimit, config.newsMaxLimit);
         const cutoff = q.days ? Date.now() - q.days * 24 * 60 * 60 * 1000 : undefined;
         const currency = q.currency;
         const pair = q.pair ? normalizePair(q.pair) : undefined;
 
-        const lists = await Promise.all(config.newsFeeds.map((u) => fetchFeed(u)));
-        let items = lists.flat();
+        let settled = await Promise.allSettled(configuredFeeds.map((u) => fetchFeed(u)));
+        const lists = settled
+            .filter((r): r is PromiseFulfilledResult<NewsItem[]> => r.status === "fulfilled")
+            .map((r) => r.value);
+        const failedFeeds = settled
+            .map((r, idx) => ({ r, feed: configuredFeeds[idx] }))
+            .filter((x): x is { r: PromiseRejectedResult; feed: string } => x.r.status === "rejected")
+            .map((x) => ({
+                feed: x.feed,
+                reason:
+                    x.r.reason?.message ||
+                    (typeof x.r.reason === "string" ? x.r.reason : "Unknown feed error"),
+            }));
+
+        // If all configured feeds fail, retry once with built-in fallbacks.
+        if (!lists.length && configuredFeeds !== fallbackNewsFeeds) {
+            settled = await Promise.allSettled(fallbackNewsFeeds.map((u) => fetchFeed(u)));
+        }
+
+        const finalLists = settled
+            .filter((r): r is PromiseFulfilledResult<NewsItem[]> => r.status === "fulfilled")
+            .map((r) => r.value);
+        const finalFailedFeeds = settled
+            .map((r, idx) => ({ r, feed: (configuredFeeds !== fallbackNewsFeeds && !lists.length) ? fallbackNewsFeeds[idx] : configuredFeeds[idx] }))
+            .filter((x): x is { r: PromiseRejectedResult; feed: string } => x.r.status === "rejected")
+            .map((x) => ({
+                feed: x.feed,
+                reason:
+                    x.r.reason?.message ||
+                    (typeof x.r.reason === "string" ? x.r.reason : "Unknown feed error"),
+            }));
+
+        if (!finalLists.length) {
+            return res.status(502).json({
+                ok: false,
+                error: "All news feeds failed. Check feed URLs or hosting outbound network access.",
+                failedFeeds: finalFailedFeeds,
+                items: [],
+            });
+        }
+
+        let items = finalLists.flat();
 
         items = items
             .filter((it) => {
@@ -201,7 +263,11 @@ export async function getNews(_req: Request & { userId?: string }, res: Response
             })
             .slice(0, limit);
 
-        return res.json({ ok: true, items });
+        return res.json({
+            ok: true,
+            items,
+            ...(finalFailedFeeds.length ? { warning: "Some feeds failed", failedFeeds: finalFailedFeeds } : {}),
+        });
     } catch (err: any) {
         if (err?.name === "ZodError") return res.status(400).json({ error: err.errors });
         return res.status(500).json({ error: "Failed to fetch news", detail: err?.message || String(err) });
