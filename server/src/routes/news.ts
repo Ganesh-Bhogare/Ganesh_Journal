@@ -5,6 +5,6 @@ import { analyzeNewsBias, getNews } from "../controllers/newsController";
 const router = Router();
 
 router.get("/", requireAuth, getNews);
-router.post("/analyze", requireAuth, analyzeNewsBias);
+router.post("/analyze", analyzeNewsBias);
 
 export default router;
