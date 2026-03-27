@@ -43,8 +43,11 @@ export function createApp() {
     app.use(express.urlencoded({ extended: true }));
     app.use(morgan("dev"));
 
-    // Static serving for uploaded screenshots
-    app.use("/uploads", express.static(config.uploadDirAbs));
+    // Static serving for uploaded screenshots.
+    // We register multiple directories so older uploads still resolve after path changes.
+    for (const dir of config.uploadSearchDirs) {
+        app.use("/uploads", express.static(dir));
+    }
 
     // Routes
     app.use("/api/auth", authRoutes);

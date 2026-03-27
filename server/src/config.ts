@@ -16,6 +16,7 @@ export const config = {
     jwtSecret: process.env.JWT_SECRET || "change-me",
     uploadDir: process.env.UPLOAD_DIR || "uploads",
     uploadDirAbs: "",
+    uploadSearchDirs: [] as string[],
     corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3000",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
@@ -70,3 +71,15 @@ const serverWorkspaceRoot = path.resolve(__dirname, "..");
 config.uploadDirAbs = path.isAbsolute(config.uploadDir)
     ? config.uploadDir
     : path.resolve(serverWorkspaceRoot, config.uploadDir);
+
+const processUploadDirAbs = path.isAbsolute(config.uploadDir)
+    ? config.uploadDir
+    : path.resolve(process.cwd(), config.uploadDir);
+
+const legacyServerUploadsDir = path.resolve(serverWorkspaceRoot, "uploads");
+
+config.uploadSearchDirs = Array.from(new Set([
+    config.uploadDirAbs,
+    processUploadDirAbs,
+    legacyServerUploadsDir,
+]));

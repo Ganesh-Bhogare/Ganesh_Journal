@@ -3,6 +3,10 @@ services:
     name: ganesh-journal
     env: node
     plan: free
+    disks:
+      - name: uploads-disk
+        mountPath: /var/data
+        sizeGB: 1
     buildCommand: npm run render:build
     startCommand: npm start
     envVars:
@@ -14,6 +18,8 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
       # Optional (set in dashboard if needed):
       # - OPENAI_API_KEY
       # - OPENAI_MODEL
