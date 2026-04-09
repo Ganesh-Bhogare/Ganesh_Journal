@@ -11,6 +11,7 @@ interface ICTTradeFormProps {
     onClose: () => void
     onSuccess: () => void
     trade?: any
+    defaultFundedAccountId?: string
 }
 
 const MARKET_OPTIONS = ['Forex', 'Crypto', 'Indian Equity', 'Indian Futures', 'Indian Options', 'Commodities', 'Indices', 'Other']
@@ -86,7 +87,7 @@ const labelStyle = {
     color: '#bfdbfe'
 }
 
-export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeFormProps) {
+export default function ICTTradeForm({ onClose, onSuccess, trade, defaultFundedAccountId }: ICTTradeFormProps) {
     const [step, setStep] = useState(1)
     const [errors, setErrors] = useState<string[]>([])
     const [loading, setLoading] = useState(false)
@@ -98,6 +99,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         strategyStyle: trade?.strategyStyle || (trade?.setupType ? 'ICT' : 'Non-ICT'),
         instrument: trade?.instrument || 'XAUUSD',
         direction: trade?.direction || 'long',
+        fundedAccountId: trade?.fundedAccountId || defaultFundedAccountId || '',
 
         // Pre-Trade Analysis
         session: trade?.session || 'London',
@@ -192,6 +194,12 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
         setChartSymbol(next)
     }, [formData.market, formData.instrument])
 
+    useEffect(() => {
+        if (!trade && defaultFundedAccountId) {
+            setFormData((prev) => ({ ...prev, fundedAccountId: defaultFundedAccountId }))
+        }
+    }, [trade, defaultFundedAccountId])
+
     const validateStep = (currentStep: number): boolean => {
         const newErrors: string[] = []
 
@@ -274,6 +282,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                 mfe: formData.mfe ? parseFloat(formData.mfe as string) : undefined,
                 htfLevelUsed: formData.htfLevelUsed ? String(formData.htfLevelUsed) : undefined,
                 ltfConfirmationQuality: formData.ltfConfirmationQuality ? String(formData.ltfConfirmationQuality) : undefined,
+                fundedAccountId: formData.fundedAccountId ? String(formData.fundedAccountId) : undefined,
                 date: dateIso,
                 entryTime: entryTimeIso,
                 exitTime: exitTimeIso

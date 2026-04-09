@@ -12,6 +12,15 @@ import WinLossPie from '../components/charts/WinLossPie'
 import { api } from '../lib/api'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
 
+type FundedAccountProfile = {
+    accountId: string
+    label?: string
+    provider?: string
+    server?: string
+}
+
+const normalizeAccountId = (value: string) => String(value || '').trim()
+
 export default function Dashboard() {
     const { user } = useAuth()
     const { accentTheme, setAccentTheme } = useTheme()
@@ -21,6 +30,11 @@ export default function Dashboard() {
     const [allTrades, setAllTrades] = useState<any[]>([])
     const [distributions, setDistributions] = useState<any>(null)
     const [fundedStatus, setFundedStatus] = useState<any>(null)
+    const [fundedProfiles, setFundedProfiles] = useState<FundedAccountProfile[]>([])
+    const [selectedFundedAccountId, setSelectedFundedAccountId] = useState('all')
+    const [newFundedAccountId, setNewFundedAccountId] = useState('')
+    const [newFundedAccountLabel, setNewFundedAccountLabel] = useState('')
+    const [accountActionMsg, setAccountActionMsg] = useState('')
 
     const getTradeSortTime = (trade: any) => {
         const created = trade?.createdAt ? new Date(trade.createdAt).getTime() : NaN
@@ -36,14 +50,18 @@ export default function Dashboard() {
         return Number.isFinite(sec) ? sec * 1000 : 0
     }
 
-    const fetchData = async () => {
+    const fetchData = async (accountId?: string) => {
         try {
+            const scopedAccountId = normalizeAccountId(accountId || '')
+            const tradeParams = scopedAccountId ? { fundedAccountId: scopedAccountId } : undefined
+            const fundedParams = scopedAccountId ? { accountId: scopedAccountId } : undefined
+
             const [kpisRes, tradesRes, allTradesRes, distRes, fundedRes] = await Promise.all([
                 api.get('/analytics/kpis').catch(e => ({ data: null })),
-                api.get('/trades?limit=100').catch(e => ({ data: { items: [] } })),
-                api.get('/trades?limit=1000').catch(e => ({ data: { items: [] } })),
+                api.get('/trades', { params: { limit: 100, ...tradeParams } }).catch(e => ({ data: { items: [] } })),
+                api.get('/trades', { params: { limit: 1000, ...tradeParams } }).catch(e => ({ data: { items: [] } })),
                 api.get('/analytics/distributions').catch(e => ({ data: null })),
-                api.get('/funded/status').catch(e => ({ data: null }))
+                api.get('/funded/status', { params: fundedParams }).catch(e => ({ data: null }))
             ])
             const recentSorted = [...(tradesRes.data?.items || [])]
                 .sort((a, b) => getTradeSortTime(b) - getTradeSortTime(a))
@@ -59,14 +77,120 @@ export default function Dashboard() {
         }
     }
 
+    const loadFundedProfiles = async () => {
+        try {
+            const { data } = await api.get('/user/preferences')
+            const prefs = data?.preferences || {}
+
+            const list = Array.isArray(prefs.fundedAccounts) ? prefs.fundedAccounts : []
+            const sanitized: FundedAccountProfile[] = list
+                .map((entry: any) => {
+                    const accountId = normalizeAccountId(entry?.accountId)
+                    if (!accountId) return null
+                    return {
+                        accountId,
+                        label: entry?.label ? String(entry.label).trim() : undefined,
+                        provider: entry?.provider ? String(entry.provider).trim() : undefined,
+                        server: entry?.server ? String(entry.server).trim() : undefined,
+                    }
+                })
+                .filter(Boolean) as FundedAccountProfile[]
+
+            const legacyAccount = normalizeAccountId(String(prefs.fundedAccountId || ''))
+            const hasLegacy = legacyAccount && !sanitized.some((item) => item.accountId.toLowerCase() === legacyAccount.toLowerCase())
+            if (hasLegacy) {
+                sanitized.push({
+                    accountId: legacyAccount,
+                    label: legacyAccount,
+                    provider: prefs.fundedProvider ? String(prefs.fundedProvider) : undefined,
+                    server: prefs.fundedServer ? String(prefs.fundedServer) : undefined,
+                })
+            }
+
+            const preferred = normalizeAccountId(String(prefs.activeFundedAccountId || ''))
+            setFundedProfiles(sanitized)
+            setSelectedFundedAccountId(preferred || 'all')
+        } catch (err) {
+            console.error('Failed to load funded profiles', err)
+            setFundedProfiles([])
+            setSelectedFundedAccountId('all')
+        }
+    }
+
+    const persistFundedProfiles = async (profiles: FundedAccountProfile[], activeId: string) => {
+        const payload: any = {
+            fundedAccounts: profiles.map((profile) => ({
+                accountId: profile.accountId,
+                label: profile.label || undefined,
+                provider: profile.provider || undefined,
+                server: profile.server || undefined,
+            })),
+            activeFundedAccountId: activeId && activeId !== 'all' ? activeId : undefined,
+        }
+
+        if (!payload.activeFundedAccountId) delete payload.activeFundedAccountId
+        await api.put('/user/preferences', payload)
+    }
+
+    const handleCreateFundedAccount = async () => {
+        const accountId = normalizeAccountId(newFundedAccountId)
+        if (!accountId) {
+            setAccountActionMsg('Account ID required hai.')
+            return
+        }
+
+        const label = normalizeAccountId(newFundedAccountLabel)
+        const alreadyExists = fundedProfiles.some((item) => item.accountId.toLowerCase() === accountId.toLowerCase())
+        if (alreadyExists) {
+            setAccountActionMsg('Ye account already added hai.')
+            return
+        }
+
+        const nextProfiles = [...fundedProfiles, { accountId, label: label || accountId }]
+        try {
+            await persistFundedProfiles(nextProfiles, accountId)
+            setFundedProfiles(nextProfiles)
+            setSelectedFundedAccountId(accountId)
+            setNewFundedAccountId('')
+            setNewFundedAccountLabel('')
+            setAccountActionMsg(`Account ${accountId} selected.`)
+        } catch (err) {
+            console.error('Failed to create funded account profile', err)
+            setAccountActionMsg('Account save nahi ho paya.')
+        }
+    }
+
+    const handleSelectFundedAccount = async (accountId: string) => {
+        const nextId = normalizeAccountId(accountId) || 'all'
+        setSelectedFundedAccountId(nextId)
+        setAccountActionMsg(nextId === 'all' ? 'Showing all funded accounts.' : `Switched to ${nextId}.`)
+
+        try {
+            await persistFundedProfiles(fundedProfiles, nextId)
+        } catch (err) {
+            console.error('Failed to persist active funded account', err)
+        }
+    }
+
     useEffect(() => {
-        fetchData()
+        loadFundedProfiles()
     }, [])
 
     useEffect(() => {
-        const onFocus = () => { fetchData() }
+        const scopedAccountId = selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined
+        fetchData(scopedAccountId)
+    }, [selectedFundedAccountId])
+
+    useEffect(() => {
+        const onFocus = () => {
+            const scopedAccountId = selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined
+            fetchData(scopedAccountId)
+        }
         const onVisibility = () => {
-            if (document.visibilityState === 'visible') fetchData()
+            if (document.visibilityState === 'visible') {
+                const scopedAccountId = selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined
+                fetchData(scopedAccountId)
+            }
         }
 
         window.addEventListener('focus', onFocus)
@@ -76,7 +200,7 @@ export default function Dashboard() {
             window.removeEventListener('focus', onFocus)
             document.removeEventListener('visibilitychange', onVisibility)
         }
-    }, [])
+    }, [selectedFundedAccountId])
 
     const winLossData = kpis ? [
         { name: 'Wins', value: Math.round((kpis.winRate || 0) * 100) },
@@ -309,6 +433,16 @@ export default function Dashboard() {
     const fundedEnabled = Boolean(funded?.enabled)
     const fundedRecent = Array.isArray(fundedSync?.recent) ? fundedSync.recent : []
     const fundedLastSync = fundedSync?.lastSyncedAt ? new Date(fundedSync.lastSyncedAt).toLocaleString() : 'Never'
+    const fundedStatusAccounts = Array.isArray(fundedStatus?.accounts)
+        ? fundedStatus.accounts
+            .map((item: any) => normalizeAccountId(item?.accountId || ''))
+            .filter(Boolean)
+        : []
+    const allFundedAccountOptions = Array.from(new Set([
+        ...fundedProfiles.map((item) => item.accountId),
+        ...fundedStatusAccounts,
+        normalizeAccountId(String(funded?.accountId || '')),
+    ].filter(Boolean)))
 
     return (
         <div className="space-y-6">
@@ -424,10 +558,10 @@ export default function Dashboard() {
 
                         <div className="flex flex-wrap gap-2">
                             <GradientButton onClick={() => setShowTradeForm(true)}>
-                                + Add New
+                                + Add New {selectedFundedAccountId !== 'all' ? `(${selectedFundedAccountId})` : ''}
                             </GradientButton>
                             <button
-                                onClick={fetchData}
+                                onClick={() => fetchData(selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined)}
                                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-700/60 text-white hover:bg-blue-900/35 transition-colors"
                             >
                                 Refresh Feed <ArrowUpRight size={14} />
@@ -448,12 +582,69 @@ export default function Dashboard() {
                             Read-only sync health, latest import timestamp, and recent funded trades.
                         </div>
                     </div>
-                    <button
-                        onClick={fetchData}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-700/60 text-white hover:bg-blue-900/35 transition-colors text-sm"
-                    >
-                        Refresh Feed <ArrowUpRight size={14} />
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <select
+                            value={selectedFundedAccountId}
+                            onChange={(e) => handleSelectFundedAccount(e.target.value)}
+                            className="px-3 py-2 rounded-lg border border-blue-700/60 bg-neutral-950/70 text-white text-sm"
+                        >
+                            <option value="all">All Accounts</option>
+                            {allFundedAccountOptions.map((accountId) => (
+                                <option key={accountId} value={accountId}>{accountId}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => fetchData(selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined)}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-700/60 text-white hover:bg-blue-900/35 transition-colors text-sm"
+                        >
+                            Refresh Feed <ArrowUpRight size={14} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Create Funded Account Profile</div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <input
+                                value={newFundedAccountId}
+                                onChange={(e) => setNewFundedAccountId(e.target.value)}
+                                placeholder="Account ID"
+                                className="px-3 py-2 rounded-lg border border-blue-700/60 bg-neutral-950/70 text-white text-sm"
+                            />
+                            <input
+                                value={newFundedAccountLabel}
+                                onChange={(e) => setNewFundedAccountLabel(e.target.value)}
+                                placeholder="Label (optional)"
+                                className="px-3 py-2 rounded-lg border border-blue-700/60 bg-neutral-950/70 text-white text-sm"
+                            />
+                            <button
+                                onClick={handleCreateFundedAccount}
+                                className="px-3 py-2 rounded-lg border border-blue-600/60 text-white hover:bg-blue-900/35 transition-colors text-sm"
+                            >
+                                Create & Select
+                            </button>
+                        </div>
+                        {accountActionMsg ? (
+                            <div className="text-xs text-cyan-300 mt-2">{accountActionMsg}</div>
+                        ) : null}
+                    </div>
+                    <div className="rounded-xl border border-blue-800/60 bg-blue-900/20 p-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Saved Profiles</div>
+                        <div className="flex flex-wrap gap-2">
+                            {fundedProfiles.length > 0 ? fundedProfiles.map((profile) => (
+                                <button
+                                    key={profile.accountId}
+                                    onClick={() => handleSelectFundedAccount(profile.accountId)}
+                                    className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${selectedFundedAccountId === profile.accountId ? 'border-cyan-400/70 text-cyan-200 bg-cyan-500/10' : 'border-blue-700/60 text-slate-200 hover:bg-blue-900/35'}`}
+                                >
+                                    {profile.label || profile.accountId}
+                                </button>
+                            )) : (
+                                <div className="text-xs text-slate-500">No funded profiles yet.</div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
@@ -481,10 +672,10 @@ export default function Dashboard() {
                 <div className="mt-4 rounded-xl border border-neutral-800/70 bg-neutral-950/40 p-3">
                     <div className="flex items-center justify-between mb-2">
                         <div className="text-xs uppercase tracking-wide text-slate-400">Recent Funded Imports</div>
-                        <div className="text-xs text-slate-500">Account: {funded?.accountId || 'N/A'}</div>
+                        <div className="text-xs text-slate-500">Account: {selectedFundedAccountId === 'all' ? (funded?.accountId || 'N/A') : selectedFundedAccountId}</div>
                     </div>
                     {fundedRecent.length > 0 ? (
-                        <div className="space-y-2">
+                        <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
                             {fundedRecent.map((trade: any) => (
                                 <div key={trade.externalTradeId || trade._id} className="flex items-center justify-between rounded-lg border border-neutral-800/80 px-3 py-2 text-xs">
                                     <div className="flex items-center gap-2">
@@ -894,10 +1085,10 @@ export default function Dashboard() {
                 </div>
 
                 {recentTrades.length > 0 ? (
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[32rem] overflow-y-auto overflow-x-auto pr-1">
                         <table className="w-full">
                             <thead>
-                                <tr className="text-left text-neutral-400 text-sm border-b border-neutral-800">
+                                <tr className="sticky top-0 z-10 bg-neutral-900 text-left text-neutral-400 text-sm border-b border-neutral-800">
                                     <th className="pb-3">Date</th>
                                     <th className="pb-3">Pair</th>
                                     <th className="pb-3">Direction</th>
@@ -944,7 +1135,8 @@ export default function Dashboard() {
             {showTradeForm && (
                 <ICTTradeForm
                     onClose={() => setShowTradeForm(false)}
-                    onSuccess={fetchData}
+                    onSuccess={() => fetchData(selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined)}
+                    defaultFundedAccountId={selectedFundedAccountId !== 'all' ? selectedFundedAccountId : undefined}
                 />
             )}
         </div>
