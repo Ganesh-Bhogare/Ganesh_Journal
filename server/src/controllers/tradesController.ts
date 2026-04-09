@@ -510,7 +510,15 @@ export async function deleteAllTrades(req: Request & { userId?: string }, res: R
 
 export async function serveTradeScreenshot(req: Request & { userId?: string }, res: Response) {
     try {
-        const { id, kind } = req.params;
+        const idRaw = (req.params as any)?.id as string | string[] | undefined;
+        const kindRaw = (req.params as any)?.kind as string | string[] | undefined;
+        const id = Array.isArray(idRaw) ? idRaw[0] : idRaw;
+        const kind = Array.isArray(kindRaw) ? kindRaw[0] : kindRaw;
+
+        if (!id || !kind || typeof id !== "string" || typeof kind !== "string") {
+            return res.status(400).json({ error: "Invalid screenshot request" });
+        }
+
         if (!isScreenshotKind(kind)) {
             return res.status(400).json({ error: "Invalid screenshot type" });
         }
