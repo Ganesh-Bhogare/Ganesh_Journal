@@ -738,8 +738,8 @@ export default function Analytics() {
                     <div className="flex items-center justify-between gap-4 mb-4">
                         <div>
                             <h3 className="text-lg font-semibold flex items-center gap-2">
-                                AI Trade Analysis
-                                <span className="px-2 py-0.5 rounded-full text-[11px] bg-brand/15 border border-brand/40 text-brand">AI v2</span>
+                                Trade Diagnostics
+                                <span className="px-2 py-0.5 rounded-full text-[11px] bg-brand/15 border border-brand/40 text-brand">v2</span>
                             </h3>
                             <p className="text-neutral-400 text-sm">Find repeated mistakes + good habits from your journal</p>
                         </div>
@@ -918,7 +918,7 @@ export default function Analytics() {
                             )}
                         </>
                     ) : (
-                        <div className="text-neutral-500 text-sm">Click Generate to analyze your latest trades.</div>
+                        <div className="text-neutral-500 text-sm">Click Generate to refresh diagnostics from your latest trades.</div>
                     )}
 
                 </AnimatedCard>
