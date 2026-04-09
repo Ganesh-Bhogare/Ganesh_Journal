@@ -4,8 +4,6 @@ import { BaselineSeries, CandlestickSeries, LineSeries, createChart, createSerie
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import { api } from '../lib/api'
-import TradingViewEmbed from '../components/TradingViewEmbed'
-import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
 
 type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h'
 
@@ -102,7 +100,6 @@ export default function TradeChart() {
     const [uploadingSnapshot, setUploadingSnapshot] = useState(false)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     const snapshotInputRef = useRef<HTMLInputElement | null>(null)
-    const liveChartWrapperRef = useRef<HTMLDivElement | null>(null)
 
     const storageKey = useMemo(() => {
         const instrument = String(trade?.instrument || 'unknown')
@@ -117,6 +114,12 @@ export default function TradeChart() {
         if (/^https?:\/\//i.test(path)) return path
         const base = (api.defaults.baseURL || '').replace(/\/api\/?$/, '')
         return `${base}${path}`
+    }
+
+    const screenshotUrl = (kind: 'entry' | 'chart', storedPath: string | undefined) => {
+        if (!storedPath) return undefined
+        if (!tradeId) return fileUrl(storedPath)
+        return fileUrl(`/api/trades/${encodeURIComponent(tradeId)}/screenshots/${kind}`)
     }
 
     useEffect(() => {
@@ -407,71 +410,6 @@ export default function TradeChart() {
         }
     }
 
-    const captureTradingViewSnapshot = async () => {
-        if (!tradeId) return
-
-        let stream: MediaStream | null = null
-        try {
-            setUploadingSnapshot(true)
-            if (!navigator.mediaDevices?.getDisplayMedia) {
-                throw new Error('Screen capture is not supported in this browser.')
-            }
-
-            stream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    frameRate: 30,
-                },
-                audio: false,
-            })
-
-            const video = document.createElement('video')
-            video.srcObject = stream
-            video.muted = true
-            video.playsInline = true
-            await video.play()
-
-            // Wait a tick so first frame is ready.
-            await new Promise((resolve) => setTimeout(resolve, 220))
-
-            const fullCanvas = document.createElement('canvas')
-            fullCanvas.width = video.videoWidth
-            fullCanvas.height = video.videoHeight
-            const fullCtx = fullCanvas.getContext('2d')
-            if (!fullCtx) throw new Error('Unable to capture frame context.')
-            fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height)
-
-            const rect = liveChartWrapperRef.current?.getBoundingClientRect()
-            const scaleX = fullCanvas.width / window.innerWidth
-            const scaleY = fullCanvas.height / window.innerHeight
-
-            // Fallback to full frame if chart rect is unavailable.
-            const sx = rect ? Math.max(0, Math.floor(rect.left * scaleX)) : 0
-            const sy = rect ? Math.max(0, Math.floor(rect.top * scaleY)) : 0
-            const sw = rect ? Math.min(fullCanvas.width - sx, Math.floor(rect.width * scaleX)) : fullCanvas.width
-            const sh = rect ? Math.min(fullCanvas.height - sy, Math.floor(rect.height * scaleY)) : fullCanvas.height
-
-            const cropCanvas = document.createElement('canvas')
-            cropCanvas.width = Math.max(1, sw)
-            cropCanvas.height = Math.max(1, sh)
-            const cropCtx = cropCanvas.getContext('2d')
-            if (!cropCtx) throw new Error('Unable to crop snapshot context.')
-            cropCtx.drawImage(fullCanvas, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height)
-
-            const blob: Blob | null = await new Promise(resolve => cropCanvas.toBlob(resolve, 'image/png'))
-            if (!blob) throw new Error('Failed to encode snapshot.')
-
-            await uploadBlobSnapshot(blob, `chart-tv-${tradeId}.png`)
-        } catch (err) {
-            console.error('Failed to auto-capture TradingView snapshot', err)
-            alert('Auto snapshot blocked/failed. Please allow tab sharing in prompt and try again.')
-        } finally {
-            if (stream) {
-                stream.getTracks().forEach((t) => t.stop())
-            }
-            setUploadingSnapshot(false)
-        }
-    }
-
     const uploadManualSnapshot = async (file: File) => {
         if (!tradeId || !file) return
 
@@ -499,14 +437,11 @@ export default function TradeChart() {
             return
         }
 
-        // In TradingView widget mode, auto-capture current tab and crop chart area.
-        captureTradingViewSnapshot()
+        snapshotInputRef.current?.click()
     }
 
-    const chartScreenshotUrl = fileUrl(trade?.chartScreenshot)
-    const entryScreenshotUrl = fileUrl(trade?.entryScreenshot)
-    const tvSymbol = trade?.chartConfig?.symbol || resolveTradingViewSymbol(trade?.market, trade?.instrument)
-    const tvInterval = toTradingViewInterval(timeframe)
+    const chartScreenshotUrl = screenshotUrl('chart', trade?.chartScreenshot)
+    const entryScreenshotUrl = screenshotUrl('entry', trade?.entryScreenshot)
 
 
     const useEntryScreenshotAsChart = async () => {
@@ -609,7 +544,7 @@ export default function TradeChart() {
                     </div>
                 </div>
 
-                <div ref={liveChartWrapperRef} className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
+                <div className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
                     {candles.length ? (
                         <div ref={chartContainerRef} className="w-full" />
                     ) : entryScreenshotUrl ? (
@@ -621,11 +556,9 @@ export default function TradeChart() {
                             />
                         </a>
                     ) : (
-                        <TradingViewEmbed
-                            symbol={tvSymbol}
-                            interval={tvInterval}
-                            height={520}
-                        />
+                        <div className="h-[520px] bg-neutral-900 text-neutral-400 text-sm flex items-center justify-center px-6 text-center">
+                            No chart data yet. Upload OHLC CSV or manual screenshot to preserve the exact setup.
+                        </div>
                     )}
                 </div>
 
@@ -633,7 +566,7 @@ export default function TradeChart() {
                     <div className="mt-3 text-sm text-neutral-500">
                         {entryScreenshotUrl
                             ? 'Showing your Entry TF screenshot. Upload CSV for real candlesticks + overlays.'
-                            : 'No local candle CSV loaded. Showing live TradingView chart; upload CSV if you want exact auto overlay positioning.'}
+                            : 'No local candle CSV loaded yet. Upload CSV or screenshot for exact chart context.'}
                     </div>
                 )}
 
@@ -645,7 +578,7 @@ export default function TradeChart() {
 
                 {!candles.length && (
                     <div className="mt-2 text-xs text-neutral-500">
-                        Tip: Save chart snapshot dabate hi tab-share prompt aayega. Allow karte hi chart auto-capture hoke niche save ho jayega.
+                        Tip: Agar CSV nahi hai, Save chart snapshot dabao aur screenshot file select karke upload karo.
                     </div>
                 )}
             </AnimatedCard>

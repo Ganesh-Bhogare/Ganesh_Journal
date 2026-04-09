@@ -5,24 +5,23 @@ import { Edit2, Trash2, Search, Filter, Download, TrendingUp, TrendingDown, Eye 
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import ICTTradeForm from '../components/ICTTradeForm'
-import TradingViewEmbed from '../components/TradingViewEmbed'
 import { api } from '../lib/api'
-import { resolveTradingViewSymbol, toTradingViewInterval } from '../lib/tradingView'
 import { formatIstDate, formatIstDateTime } from '../lib/istDate'
 
 export default function Trades() {
     const navigate = useNavigate()
     const [trades, setTrades] = useState<any[]>([])
+    const [fundedAccounts, setFundedAccounts] = useState<string[]>([])
     const [showTradeForm, setShowTradeForm] = useState(false)
     const [editingTrade, setEditingTrade] = useState<any>(null)
     const [viewingTrade, setViewingTrade] = useState<any>(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterDirection, setFilterDirection] = useState('')
+    const [filterFundedAccountId, setFilterFundedAccountId] = useState('')
     const [showFilters, setShowFilters] = useState(false)
     const [exporting, setExporting] = useState(false)
     const [importing, setImporting] = useState(false)
     const [savingSnapshot, setSavingSnapshot] = useState(false)
-    const [viewChartTimeframe, setViewChartTimeframe] = useState('5')
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     const snapshotInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -31,6 +30,32 @@ export default function Trades() {
         if (/^https?:\/\//i.test(path)) return path
         const base = (api.defaults.baseURL || '').replace(/\/api\/?$/, '')
         return `${base}${path}`
+    }
+
+    const getFundedAccountId = (trade: any) => {
+        const direct = String(trade?.fundedAccountId || '').trim()
+        if (direct) return direct
+
+        const extId = String(trade?.externalTradeId || '').trim()
+        if (extId.includes(':')) return extId.split(':')[0].trim()
+
+        const tags = Array.isArray(trade?.tags) ? trade.tags : []
+        const accTag = tags.find((t: string) => String(t).startsWith('account:'))
+        if (accTag) return String(accTag).slice('account:'.length)
+
+        return ''
+    }
+
+    const fetchFundedAccounts = async () => {
+        try {
+            const { data } = await api.get('/funded/status')
+            const accounts = Array.isArray(data?.accounts)
+                ? data.accounts.map((a: any) => String(a?.accountId || '').trim()).filter(Boolean)
+                : []
+            setFundedAccounts(accounts)
+        } catch (err) {
+            console.error('Failed to fetch funded accounts', err)
+        }
     }
 
     const pipMultiplierForInstrument = (instrument?: string) => {
@@ -463,6 +488,7 @@ export default function Trades() {
         try {
             const params: any = {}
             if (filterDirection) params.direction = filterDirection
+            if (filterFundedAccountId) params.fundedAccountId = filterFundedAccountId
 
             // Fetch all trades (paged) so CSV export isn't limited to the UI page.
             const pageSize = 500
@@ -500,8 +526,22 @@ export default function Trades() {
         try {
             const params: any = {}
             if (filterDirection) params.direction = filterDirection
-            const { data } = await api.get('/trades', { params })
-            setTrades(data.items || [])
+            if (filterFundedAccountId) params.fundedAccountId = filterFundedAccountId
+
+            // Load all pages so the Trades screen shows full history, not only default 20 rows.
+            const pageSize = 500
+            let page = 1
+            const all: any[] = []
+
+            while (true) {
+                const { data } = await api.get('/trades', { params: { ...params, page, limit: pageSize } })
+                const items = Array.isArray(data?.items) ? data.items : []
+                all.push(...items)
+                if (items.length < pageSize) break
+                page += 1
+            }
+
+            setTrades(all)
         } catch (err) {
             console.error('Failed to fetch trades:', err)
         }
@@ -509,7 +549,16 @@ export default function Trades() {
 
     useEffect(() => {
         fetchTrades()
-    }, [filterDirection])
+    }, [filterDirection, filterFundedAccountId])
+
+    useEffect(() => {
+        fetchFundedAccounts()
+    }, [])
+
+    const fundedAccountOptions = Array.from(new Set([
+        ...fundedAccounts,
+        ...trades.map((t) => getFundedAccountId(t)).filter(Boolean),
+    ])).sort((a, b) => a.localeCompare(b))
 
     const handleDelete = async (id: string) => {
         if (!confirm('Delete this trade?')) return
@@ -521,22 +570,35 @@ export default function Trades() {
         }
     }
 
+    const handleDeleteAll = async () => {
+        const marker = window.prompt('Type DELETE to remove all your trades permanently:')
+        if (marker !== 'DELETE') return
+
+        try {
+            await api.delete('/trades/all')
+            setTrades([])
+            setViewingTrade(null)
+            alert('All trades deleted successfully.')
+        } catch (err) {
+            console.error('Failed to delete all trades:', err)
+            alert('Failed to delete all trades.')
+        }
+    }
+
     const handleEdit = (trade: any) => {
         setEditingTrade(trade)
         setShowTradeForm(true)
     }
 
     const handleView = (trade: any) => {
-        const defaultTf = trade?.chartConfig?.timeframe || toTradingViewInterval(trade?.entryTimeframe || '5m')
         const id = trade?._id
         if (id) {
-            navigate(`/trade-chart?tradeId=${encodeURIComponent(id)}&tf=${encodeURIComponent(defaultTf)}`)
+            navigate(`/trade-chart?tradeId=${encodeURIComponent(id)}`)
             return
         }
 
         // Fallback if id is missing
         setViewingTrade(trade)
-        setViewChartTimeframe(defaultTf)
     }
 
     const handleSnapshotFile = async (file: File) => {
@@ -565,27 +627,6 @@ export default function Trades() {
         trade.instrument?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         trade.notes?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-
-    const overlayRr = (() => {
-        const e = Number(viewingTrade?.entryPrice)
-        const s = Number(viewingTrade?.stopLoss)
-        const t = Number(viewingTrade?.takeProfit)
-        const risk = Math.abs(e - s)
-        const reward = Math.abs(t - e)
-        return Number.isFinite(risk) && Number.isFinite(reward) && risk > 0 ? reward / risk : undefined
-    })()
-
-    const exitBadgeClass = (() => {
-        const explicit = String(viewingTrade?.outcome || '').toLowerCase()
-        if (explicit === 'win') return 'bg-green-400/20 text-green-200 border-green-300/30'
-        if (explicit === 'loss') return 'bg-red-400/20 text-red-200 border-red-300/30'
-        if (explicit === 'breakeven') return 'bg-slate-400/20 text-slate-200 border-slate-300/30'
-
-        const pnl = Number(viewingTrade?.pnl)
-        if (Number.isFinite(pnl) && pnl > 0) return 'bg-green-400/20 text-green-200 border-green-300/30'
-        if (Number.isFinite(pnl) && pnl < 0) return 'bg-red-400/20 text-red-200 border-red-300/30'
-        return 'bg-violet-400/20 text-violet-200 border-violet-300/30'
-    })()
 
     return (
         <div className="space-y-6">
@@ -638,6 +679,14 @@ export default function Trades() {
                         <Download size={18} />
                         {exporting ? 'Exporting...' : 'Export'}
                     </button>
+                    <button
+                        onClick={handleDeleteAll}
+                        className="px-4 py-2 bg-red-900/30 border border-red-700 rounded-lg hover:bg-red-900/45 transition-colors flex items-center gap-2 text-red-200"
+                        title="Delete all trades"
+                    >
+                        <Trash2 size={18} />
+                        Delete All
+                    </button>
                     <GradientButton onClick={() => { setEditingTrade(null); setShowTradeForm(true); }}>
                         + Add Trade
                     </GradientButton>
@@ -683,6 +732,19 @@ export default function Trades() {
                                     <option value="">All</option>
                                     <option value="long">Long</option>
                                     <option value="short">Short</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm mb-2">Funded Account</label>
+                                <select
+                                    value={filterFundedAccountId}
+                                    onChange={(e) => setFilterFundedAccountId(e.target.value)}
+                                    className="px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg focus:outline-none focus:border-brand"
+                                >
+                                    <option value="">All</option>
+                                    {fundedAccountOptions.map((accId) => (
+                                        <option key={accId} value={accId}>{accId}</option>
+                                    ))}
                                 </select>
                             </div>
                         </div>
@@ -826,7 +888,7 @@ export default function Trades() {
                                     }}
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
                                 >
-                                    Analyze with AI
+                                    Open Diagnostics
                                 </button>
                                 <button
                                     onClick={() => {
@@ -842,7 +904,7 @@ export default function Trades() {
                                     onClick={() => snapshotInputRef.current?.click()}
                                     disabled={savingSnapshot}
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors disabled:opacity-60"
-                                    title="Use TradingView camera to download image, then upload it here"
+                                    title="Upload your saved chart screenshot"
                                 >
                                     {savingSnapshot ? 'Saving…' : 'Save Snapshot'}
                                 </button>
@@ -885,60 +947,7 @@ export default function Trades() {
                         </div>
 
                         <div>
-                            <div className="text-sm font-semibold mb-3">Live Multi-Timeframe TradingView Chart</div>
-                            <div className="mb-3 flex flex-wrap gap-2">
-                                {((viewingTrade?.chartConfig?.timeframes && viewingTrade.chartConfig.timeframes.length
-                                    ? viewingTrade.chartConfig.timeframes
-                                    : ['5', '15', '60']) as string[]).map((tf) => (
-                                        <button
-                                            key={tf}
-                                            onClick={() => setViewChartTimeframe(tf)}
-                                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${viewChartTimeframe === tf
-                                                ? 'bg-brand/20 border-brand text-brand'
-                                                : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500'
-                                                }`}
-                                        >
-                                            {tf}
-                                        </button>
-                                    ))}
-                            </div>
-                            <div className="relative border border-blue-900/70 rounded-xl overflow-hidden bg-[#0b162e]">
-                                <TradingViewEmbed
-                                    symbol={viewingTrade?.chartConfig?.symbol || resolveTradingViewSymbol(viewingTrade?.market, viewingTrade?.instrument)}
-                                    interval={viewChartTimeframe}
-                                    height={460}
-                                />
-
-                                <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-wrap gap-2">
-                                    <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-400/20 text-amber-200 border border-amber-300/30">
-                                        Entry {viewingTrade?.entryPrice ?? '-'}
-                                    </span>
-                                    {viewingTrade?.exitPrice !== undefined && viewingTrade?.exitPrice !== null && (
-                                        <span className={`px-2 py-1 rounded-md text-[11px] font-semibold border ${exitBadgeClass}`}>
-                                            Exit {viewingTrade?.exitPrice}
-                                        </span>
-                                    )}
-                                    {viewingTrade?.stopLoss !== undefined && viewingTrade?.stopLoss !== null && (
-                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-red-400/20 text-red-200 border border-red-300/30">
-                                            SL {viewingTrade?.stopLoss}
-                                        </span>
-                                    )}
-                                    {viewingTrade?.takeProfit !== undefined && viewingTrade?.takeProfit !== null && (
-                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-green-400/20 text-green-200 border border-green-300/30">
-                                            TP {viewingTrade?.takeProfit}
-                                        </span>
-                                    )}
-                                    {overlayRr !== undefined && (
-                                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-cyan-400/20 text-cyan-200 border border-cyan-300/30">
-                                            RR {overlayRr.toFixed(2)}
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md border border-neutral-700/70 bg-black/45 px-2 py-1 text-[11px] text-neutral-200">
-                                    Entry Time (IST): {viewingTrade?.entryTime ? formatIstDateTime(viewingTrade.entryTime) : (viewingTrade?.date ? formatIstDateTime(viewingTrade.date) : '-')}
-                                </div>
-                            </div>
+                            <div className="text-sm font-semibold mb-3">Trade Snapshot</div>
                             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div className="p-3 rounded-lg bg-neutral-800/35 border border-neutral-800">
                                     <div className="text-neutral-400 text-xs mb-1">Entry</div>
@@ -977,20 +986,24 @@ export default function Trades() {
                                     </div>
                                 </div>
                                 <div className="mt-2 text-[11px] text-neutral-500">
-                                    Live chart current candle dikhata hai. Exact trade location ke liye upar Entry/SL/TP + Trade Time use karo.
+                                    Snapshot ko future review ke liye save karke rakho. Entry/SL/TP + Trade Time se setup context clear dikhega.
                                 </div>
                             </div>
                             {viewingTrade?.chartScreenshot && (
                                 <div className="mt-3 p-3 rounded-lg bg-neutral-800/25 border border-neutral-800">
                                     <div className="text-xs text-neutral-400 mb-2">Saved Snapshot</div>
                                     <a
-                                        href={fileUrl(viewingTrade.chartScreenshot)}
+                                        href={viewingTrade?._id
+                                            ? fileUrl(`/api/trades/${encodeURIComponent(viewingTrade._id)}/screenshots/chart`)
+                                            : fileUrl(viewingTrade.chartScreenshot)}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="block"
                                     >
                                         <img
-                                            src={fileUrl(viewingTrade.chartScreenshot)}
+                                            src={viewingTrade?._id
+                                                ? fileUrl(`/api/trades/${encodeURIComponent(viewingTrade._id)}/screenshots/chart`)
+                                                : fileUrl(viewingTrade.chartScreenshot)}
                                             alt="Saved chart snapshot"
                                             className="w-full max-h-48 object-contain rounded-md border border-neutral-800 bg-neutral-900"
                                         />

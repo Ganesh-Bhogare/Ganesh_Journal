@@ -1,14 +1,63 @@
 import { Request, Response } from "express";
+import fs from "fs";
+import path from "path";
 import { Trade } from "../models/Trade";
+import { TradeScreenshot, TradeScreenshotKind } from "../models/TradeScreenshot";
 import { tradeSchema } from "../utils/validation";
 import { User } from "../models/User";
+import { config } from "../config";
+
+const SCREENSHOT_KIND_TO_FIELD: Record<TradeScreenshotKind, "htfScreenshot" | "entryScreenshot" | "postTradeScreenshot" | "chartScreenshot"> = {
+    htf: "htfScreenshot",
+    entry: "entryScreenshot",
+    postTrade: "postTradeScreenshot",
+    chart: "chartScreenshot",
+};
+
+function isScreenshotKind(v: string): v is TradeScreenshotKind {
+    return v === "htf" || v === "entry" || v === "postTrade" || v === "chart";
+}
+
+function pickMimeType(file: Express.Multer.File) {
+    const mime = String(file.mimetype || "").trim().toLowerCase();
+    return mime.startsWith("image/") ? mime : "image/png";
+}
+
+function readDiskFileIfPresent(filePath: string): Buffer | undefined {
+    try {
+        if (!fs.existsSync(filePath)) return undefined;
+        return fs.readFileSync(filePath);
+    } catch {
+        return undefined;
+    }
+}
+
+function mimeTypeFromFilename(filename: string) {
+    const ext = path.extname(filename).toLowerCase();
+    if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+    if (ext === ".webp") return "image/webp";
+    if (ext === ".gif") return "image/gif";
+    return "image/png";
+}
+
+function toClientTrade(tradeLike: any) {
+    const trade = tradeLike && typeof tradeLike.toObject === "function" ? tradeLike.toObject() : tradeLike;
+    const id = String(trade?._id || "").trim();
+    if (!id) return trade;
+
+    if (trade.htfScreenshot) trade.htfScreenshot = `/api/trades/${id}/screenshots/htf`;
+    if (trade.entryScreenshot) trade.entryScreenshot = `/api/trades/${id}/screenshots/entry`;
+    if (trade.postTradeScreenshot) trade.postTradeScreenshot = `/api/trades/${id}/screenshots/postTrade`;
+    if (trade.chartScreenshot) trade.chartScreenshot = `/api/trades/${id}/screenshots/chart`;
+    return trade;
+}
 
 export async function getTrade(req: Request & { userId?: string }, res: Response) {
     try {
         const { id } = req.params;
         const trade = await Trade.findOne({ _id: id, userId: req.userId });
         if (!trade) return res.status(404).json({ error: "Trade not found" });
-        return res.json(trade);
+        return res.json(toClientTrade(trade));
     } catch (_err) {
         return res.status(500).json({ error: "Failed to get trade" });
     }
@@ -249,7 +298,7 @@ export async function createTrade(req: Request & { userId?: string }, res: Respo
             tags,
             date: new Date(parsed.date),
         });
-        return res.status(201).json(trade);
+        return res.status(201).json(toClientTrade(trade));
     } catch (err: any) {
         if (err.name === "ZodError") return res.status(400).json({ error: err.errors });
         return res.status(500).json({ error: "Failed to create trade" });
@@ -285,7 +334,7 @@ export async function updateTrade(req: Request & { userId?: string }, res: Respo
             { ...calculatedData, ...risk.tradePatch, tags: nextTags },
             { new: true }
         );
-        return res.json(updated);
+        return res.json(toClientTrade(updated));
     } catch (err: any) {
         if (err.name === "ZodError") return res.status(400).json({ error: err.errors });
         return res.status(500).json({ error: "Failed to update trade" });
@@ -298,6 +347,7 @@ export async function deleteTrade(req: Request & { userId?: string }, res: Respo
         const { id } = req.params;
         const deleted = await Trade.findOneAndDelete({ _id: id, userId: req.userId });
         if (!deleted) return res.status(404).json({ error: "Trade not found" });
+        await TradeScreenshot.deleteMany({ tradeId: deleted._id, userId: req.userId });
         return res.json({ success: true });
     } catch (_err) {
         return res.status(500).json({ error: "Failed to delete trade" });
@@ -316,6 +366,14 @@ export async function listTrades(req: Request & { userId?: string }, res: Respon
         if (req.query.instrument) filters.instrument = req.query.instrument;
         if (req.query.direction) filters.direction = req.query.direction;
         if (req.query.tag) filters.tags = req.query.tag;
+        if (req.query.fundedAccountId) {
+            const fundedAccountId = String(req.query.fundedAccountId);
+            const escaped = fundedAccountId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filters.$or = [
+                { fundedAccountId },
+                { externalTradeId: new RegExp(`^${escaped}:`) },
+            ];
+        }
 
         const sort: Record<string, 1 | -1> = sortBy === "created"
             ? { createdAt: -1 }
@@ -326,7 +384,7 @@ export async function listTrades(req: Request & { userId?: string }, res: Respon
             Trade.countDocuments(filters),
         ]);
 
-        return res.json({ items, page, total, pages: Math.ceil(total / limit) });
+        return res.json({ items: items.map((t) => toClientTrade(t)), page, total, pages: Math.ceil(total / limit) });
     } catch (_err) {
         return res.status(500).json({ error: "Failed to list trades" });
     }
@@ -359,18 +417,29 @@ export async function uploadScreenshots(req: Request & { userId?: string }, res:
         if (!trade) return res.status(404).json({ error: "Trade not found" });
 
         const updates: any = {};
+        const kinds: TradeScreenshotKind[] = ["htf", "entry", "postTrade", "chart"];
 
-        if (files.htf && files.htf[0]) {
-            updates.htfScreenshot = `/uploads/${files.htf[0].filename}`;
-        }
-        if (files.entry && files.entry[0]) {
-            updates.entryScreenshot = `/uploads/${files.entry[0].filename}`;
-        }
-        if (files.postTrade && files.postTrade[0]) {
-            updates.postTradeScreenshot = `/uploads/${files.postTrade[0].filename}`;
-        }
-        if (files.chart && files.chart[0]) {
-            updates.chartScreenshot = `/uploads/${files.chart[0].filename}`;
+        for (const kind of kinds) {
+            const file = files?.[kind]?.[0];
+            if (!file) continue;
+
+            const fileBuffer = file.buffer || readDiskFileIfPresent(file.path);
+            if (!fileBuffer) continue;
+
+            await TradeScreenshot.findOneAndUpdate(
+                { tradeId: trade._id, userId: req.userId, kind },
+                {
+                    tradeId: trade._id,
+                    userId: req.userId,
+                    kind,
+                    mimeType: pickMimeType(file),
+                    originalName: file.originalname,
+                    data: fileBuffer,
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+
+            updates[SCREENSHOT_KIND_TO_FIELD[kind]] = `/api/trades/${id}/screenshots/${kind}`;
         }
 
         const updated = await Trade.findOneAndUpdate(
@@ -379,7 +448,7 @@ export async function uploadScreenshots(req: Request & { userId?: string }, res:
             { new: true }
         );
 
-        return res.json(updated);
+        return res.json(toClientTrade(updated));
     } catch (_err) {
         return res.status(500).json({ error: "Failed to upload screenshots" });
     }
@@ -395,14 +464,102 @@ export async function setChartFromEntryScreenshot(req: Request & { userId?: stri
             return res.status(400).json({ error: "No entry screenshot found on this trade" });
         }
 
+        const entryStored = await TradeScreenshot.findOne({
+            tradeId: trade._id,
+            userId: req.userId,
+            kind: "entry",
+        });
+
+        if (entryStored) {
+            await TradeScreenshot.findOneAndUpdate(
+                { tradeId: trade._id, userId: req.userId, kind: "chart" },
+                {
+                    tradeId: trade._id,
+                    userId: req.userId,
+                    kind: "chart",
+                    mimeType: entryStored.mimeType,
+                    originalName: entryStored.originalName,
+                    data: entryStored.data,
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+        }
+
         const updated = await Trade.findOneAndUpdate(
             { _id: id, userId: req.userId },
-            { chartScreenshot: trade.entryScreenshot },
+            { chartScreenshot: `/api/trades/${id}/screenshots/chart` },
             { new: true }
         );
 
-        return res.json(updated);
+        return res.json(toClientTrade(updated));
     } catch (_err) {
         return res.status(500).json({ error: "Failed to set chart screenshot" });
+    }
+}
+
+// Deletes all trades for the current user
+export async function deleteAllTrades(req: Request & { userId?: string }, res: Response) {
+    try {
+        await TradeScreenshot.deleteMany({ userId: req.userId });
+        const result = await Trade.deleteMany({ userId: req.userId });
+        return res.json({ success: true, deleted: result.deletedCount || 0 });
+    } catch (_err) {
+        return res.status(500).json({ error: "Failed to delete all trades" });
+    }
+}
+
+export async function serveTradeScreenshot(req: Request & { userId?: string }, res: Response) {
+    try {
+        const { id, kind } = req.params;
+        if (!isScreenshotKind(kind)) {
+            return res.status(400).json({ error: "Invalid screenshot type" });
+        }
+
+        const trade = await Trade.findOne({ _id: id, userId: req.userId }).select("htfScreenshot entryScreenshot postTradeScreenshot chartScreenshot");
+        if (!trade) return res.status(404).json({ error: "Trade not found" });
+
+        const archived = await TradeScreenshot.findOne({ tradeId: trade._id, userId: req.userId, kind }).select("mimeType data");
+        if (archived?.data) {
+            res.setHeader("Content-Type", archived.mimeType || "application/octet-stream");
+            res.setHeader("Cache-Control", "private, max-age=86400");
+            return res.send(archived.data);
+        }
+
+        const field = SCREENSHOT_KIND_TO_FIELD[kind];
+        const screenshotPath = (trade as any)?.[field] as string | undefined;
+        if (!screenshotPath) return res.status(404).json({ error: "Screenshot not found" });
+
+        if (screenshotPath.startsWith("/uploads/")) {
+            const filename = path.basename(screenshotPath);
+            const fallbackMime = mimeTypeFromFilename(filename);
+            for (const dir of config.uploadSearchDirs) {
+                const abs = path.join(dir, filename);
+                if (fs.existsSync(abs)) {
+                    const fileBuffer = readDiskFileIfPresent(abs);
+                    if (fileBuffer) {
+                        await TradeScreenshot.findOneAndUpdate(
+                            { tradeId: trade._id, userId: req.userId, kind },
+                            {
+                                tradeId: trade._id,
+                                userId: req.userId,
+                                kind,
+                                mimeType: fallbackMime,
+                                originalName: filename,
+                                data: fileBuffer,
+                            },
+                            { upsert: true, new: true, setDefaultsOnInsert: true }
+                        );
+                        res.setHeader("Content-Type", fallbackMime);
+                        res.setHeader("Cache-Control", "private, max-age=86400");
+                        return res.send(fileBuffer);
+                    }
+                    return res.sendFile(abs);
+                }
+            }
+        }
+
+        return res.status(404).json({ error: "Screenshot not found" });
+    } catch (_err) {
+        return res.status(500).json({ error: "Failed to load screenshot" });
     }
 }

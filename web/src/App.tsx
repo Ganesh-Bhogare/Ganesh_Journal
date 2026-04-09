@@ -64,7 +64,7 @@ export default function App() {
                                             <Menu size={18} />
                                         </button>
                                         <div className="font-semibold bg-gradient-to-r from-brand-yellow to-brand-orange bg-clip-text text-transparent">
-                                            Ganesh Journal
+                                            Trade Tracker
                                         </div>
                                         <div className="w-10" />
                                     </div>

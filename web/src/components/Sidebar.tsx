@@ -17,7 +17,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     const navItems = [
         { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
         { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-        { to: '/ai-analysis', label: 'AI Trade Analysis', icon: Sparkles },
+        { to: '/ai-analysis', label: 'Trade Diagnostics', icon: Sparkles },
         { to: '/trades', label: 'Trades', icon: TrendingUp },
         { to: '/calendar', label: 'Calendar', icon: Calendar },
         { to: '/news', label: 'News', icon: Newspaper },
@@ -52,7 +52,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.5 }}
                 >
-                    <span>Ganesh Journal</span>
+                    <span>Trade Tracker</span>
                     <button
                         type="button"
                         onClick={onClose}

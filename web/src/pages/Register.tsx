@@ -44,7 +44,7 @@ export default function Register() {
                     className="text-center mb-8"
                 >
                     <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-brand-yellow to-brand-orange bg-clip-text text-transparent">
-                        Ganesh Journal
+                        Trade Tracker
                     </h1>
                     <p className="text-neutral-400">Create your trading account</p>
                 </motion.div>

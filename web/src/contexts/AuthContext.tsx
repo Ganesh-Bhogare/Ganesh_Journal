@@ -22,13 +22,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const token = localStorage.getItem('token')
-        const userData = localStorage.getItem('user')
-        if (token && userData) {
-            setToken(token)
-            setUser(JSON.parse(userData))
+        const boot = async () => {
+            const token = localStorage.getItem('token')
+            const userData = localStorage.getItem('user')
+
+            if (!token || !userData) {
+                setLoading(false)
+                return
+            }
+
+            try {
+                const parsedUser = JSON.parse(userData)
+                setToken(token)
+                // Validate token against backend to avoid stale auth state.
+                await api.get('/user/preferences')
+                setUser(parsedUser)
+            } catch {
+                localStorage.removeItem('token')
+                localStorage.removeItem('user')
+                setToken()
+                setUser(null)
+            } finally {
+                setLoading(false)
+            }
         }
-        setLoading(false)
+
+        boot()
     }, [])
 
     const login = async (email: string, password: string) => {

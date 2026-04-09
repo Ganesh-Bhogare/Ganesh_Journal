@@ -106,7 +106,17 @@ function computeWinRateAfterLossStreak(tradesAsc: any[], streakLen: number) {
 // Computes key performance metrics for the current user
 export async function kpis(req: Request & { userId?: string }, res: Response) {
     try {
-        const trades = await Trade.find({ userId: req.userId }).sort({ date: 1 });
+        const fundedAccountId = String(req.query.fundedAccountId || "").trim();
+        const filters: any = { userId: req.userId };
+        if (fundedAccountId) {
+            const escaped = fundedAccountId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filters.$or = [
+                { fundedAccountId },
+                { externalTradeId: new RegExp(`^${escaped}:`) },
+            ];
+        }
+
+        const trades = await Trade.find(filters).sort({ date: 1 });
         if (trades.length === 0) return res.json({
             winRate: 0,
             profitFactor: 0,
@@ -168,7 +178,17 @@ export async function kpis(req: Request & { userId?: string }, res: Response) {
 // Aggregation for distribution charts
 export async function distributions(req: Request & { userId?: string }, res: Response) {
     try {
-        const trades = await Trade.find({ userId: req.userId }).select(
+        const fundedAccountId = String(req.query.fundedAccountId || "").trim();
+        const filters: any = { userId: req.userId };
+        if (fundedAccountId) {
+            const escaped = fundedAccountId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filters.$or = [
+                { fundedAccountId },
+                { externalTradeId: new RegExp(`^${escaped}:`) },
+            ];
+        }
+
+        const trades = await Trade.find(filters).select(
             "instrument direction outcome pnl session"
         );
 

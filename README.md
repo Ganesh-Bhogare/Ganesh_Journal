@@ -1,4 +1,4 @@
-# Ganesh Journal 🎯
+# Trade Tracker 🎯
 
 A professional full-stack Forex trading journal web app with modern 3D animations and transitions, inspired by TradeScribe and TradeDairy. Built specifically for forex traders who want to improve their edge through data-driven insights.
 

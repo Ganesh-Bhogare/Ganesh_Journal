@@ -1,5 +1,5 @@
 {
-  "name": "ganesh-journal",
+  "name": "trade-tracker",
   "version": "0.1.0",
   "private": true,
   "main": "index.js",
@@ -30,6 +30,6 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "Ganesh Journal monorepo: Next.js frontend + Express/MongoDB backend",
+  "description": "Trade Tracker monorepo: frontend + Express/MongoDB backend",
   "dependencies": {}
 }

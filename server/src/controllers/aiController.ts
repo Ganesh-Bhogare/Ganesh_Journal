@@ -114,6 +114,90 @@ function normalizeNullsDeep(value: any): any {
     return value;
 }
 
+function getErrorMessage(err: any) {
+    return String(err?.error?.message || err?.message || "").toLowerCase();
+}
+
+function stripImageItemsFromMessages(messages: any[]) {
+    return messages.map((m) => {
+        if (!Array.isArray(m?.content)) return m;
+        return {
+            ...m,
+            content: m.content.filter((item: any) => item?.type !== "image_url"),
+        };
+    });
+}
+
+async function createJsonCompletionWithFallback(
+    openai: any,
+    model: string,
+    messages: any[],
+    temperature = 0.2
+) {
+    let lastError: any;
+
+    try {
+        const completion = await openai.chat.completions.create({
+            model,
+            messages,
+            temperature,
+            response_format: { type: "json_object" } as any,
+        });
+        return {
+            content: completion.choices?.[0]?.message?.content || "{}",
+            strippedImages: false,
+            usedJsonMode: true,
+        };
+    } catch (err: any) {
+        lastError = err;
+    }
+
+    try {
+        const completion = await openai.chat.completions.create({
+            model,
+            messages,
+            temperature,
+        });
+        return {
+            content: completion.choices?.[0]?.message?.content || "{}",
+            strippedImages: false,
+            usedJsonMode: false,
+        };
+    } catch (err: any) {
+        lastError = err;
+        const errMsg = getErrorMessage(err);
+        const couldBeImageIssue =
+            errMsg.includes("image") ||
+            errMsg.includes("vision") ||
+            errMsg.includes("multimodal") ||
+            errMsg.includes("content type") ||
+            errMsg.includes("unsupported") ||
+            errMsg.includes("invalid content");
+
+        const hasImages = messages.some((m) =>
+            Array.isArray(m?.content) && m.content.some((item: any) => item?.type === "image_url")
+        );
+
+        if (!hasImages || !couldBeImageIssue) throw err;
+    }
+
+    const textOnlyMessages = stripImageItemsFromMessages(messages);
+    try {
+        const completion = await openai.chat.completions.create({
+            model,
+            messages: textOnlyMessages,
+            temperature,
+        });
+        return {
+            content: completion.choices?.[0]?.message?.content || "{}",
+            strippedImages: true,
+            usedJsonMode: false,
+        };
+    } catch (err: any) {
+        throw lastError || err;
+    }
+}
+
 function computePlannedRR(t: any) {
     const entry = safeNumber(t.entryPrice);
     const sl = safeNumber(t.stopLoss);
@@ -387,14 +471,10 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
             },
         ];
 
-        const completion = await openai.chat.completions.create({
-            model: config.openaiModel,
-            messages,
-            temperature: 0.2,
-            response_format: { type: "json_object" } as any,
-        });
+        const completionResult = await createJsonCompletionWithFallback(openai, config.openaiModel, messages, 0.2);
+        const imagesUsed = completionResult.strippedImages ? 0 : imageItems.length;
 
-        const content = completion.choices?.[0]?.message?.content || "{}";
+        const content = completionResult.content || "{}";
         const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
@@ -409,7 +489,7 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
             return res.status(200).json({
                 model: config.openaiModel,
                 tradeId: body.tradeId,
-                imagesUsed: imageItems.length,
+                imagesUsed,
                 ok: false,
                 result: parsed,
                 validationError: validated.error.flatten(),
@@ -419,7 +499,7 @@ export async function analyzeTrade(req: Request & { userId?: string }, res: Resp
         return res.json({
             model: config.openaiModel,
             tradeId: body.tradeId,
-            imagesUsed: imageItems.length,
+            imagesUsed,
             ok: true,
             result: validated.data,
         });
@@ -481,14 +561,10 @@ export async function chatTrade(req: Request & { userId?: string }, res: Respons
             },
         ];
 
-        const completion = await openai.chat.completions.create({
-            model: config.openaiModel,
-            messages,
-            temperature: 0.2,
-            response_format: { type: "json_object" } as any,
-        });
+        const completionResult = await createJsonCompletionWithFallback(openai, config.openaiModel, messages, 0.2);
+        const imagesUsed = completionResult.strippedImages ? 0 : imageItems.length;
 
-        const content = completion.choices?.[0]?.message?.content || "{}";
+        const content = completionResult.content || "{}";
         const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
@@ -503,7 +579,7 @@ export async function chatTrade(req: Request & { userId?: string }, res: Respons
             return res.status(200).json({
                 model: config.openaiModel,
                 tradeId: body.tradeId,
-                imagesUsed: imageItems.length,
+                imagesUsed,
                 ok: false,
                 result: parsed,
                 validationError: validated.error.flatten(),
@@ -513,7 +589,7 @@ export async function chatTrade(req: Request & { userId?: string }, res: Respons
         return res.json({
             model: config.openaiModel,
             tradeId: body.tradeId,
-            imagesUsed: imageItems.length,
+            imagesUsed,
             ok: true,
             result: validated.data,
         });
@@ -578,14 +654,8 @@ export async function allTradesReport(req: Request & { userId?: string }, res: R
             },
         ];
 
-        const completion = await openai.chat.completions.create({
-            model: config.openaiModel,
-            messages,
-            temperature: 0.2,
-            response_format: { type: "json_object" } as any,
-        });
-
-        const content = completion.choices?.[0]?.message?.content || "{}";
+        const completionResult = await createJsonCompletionWithFallback(openai, config.openaiModel, messages, 0.2);
+        const content = completionResult.content || "{}";
         const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {
@@ -759,14 +829,8 @@ export async function weeklyReview(req: Request & { userId?: string }, res: Resp
             },
         ];
 
-        const completion = await openai.chat.completions.create({
-            model: config.openaiModel,
-            messages,
-            temperature: 0.2,
-            response_format: { type: "json_object" } as any,
-        });
-
-        const content = completion.choices?.[0]?.message?.content || "{}";
+        const completionResult = await createJsonCompletionWithFallback(openai, config.openaiModel, messages, 0.2);
+        const content = completionResult.content || "{}";
         const cleanContent = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = (() => {
             try {

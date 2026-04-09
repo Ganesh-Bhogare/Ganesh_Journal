@@ -1,17 +1,18 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
-import { createTrade, updateTrade, deleteTrade, listTrades, recalculateAllTrades, uploadScreenshots, importTrades, getTrade, setChartFromEntryScreenshot } from "../controllers/tradesController";
+import { createTrade, updateTrade, deleteTrade, deleteAllTrades, listTrades, recalculateAllTrades, uploadScreenshots, importTrades, getTrade, setChartFromEntryScreenshot, serveTradeScreenshot } from "../controllers/tradesController";
 import { upload } from "../utils/uploader";
-import { config } from "../config";
 import path from "path";
 
 const router = Router();
 
 router.get("/", requireAuth, listTrades);
 router.get("/:id", requireAuth, getTrade);
+router.get("/:id/screenshots/:kind", requireAuth, serveTradeScreenshot);
 router.post("/:id/chart-from-entry", requireAuth, setChartFromEntryScreenshot);
 router.post("/", requireAuth, createTrade);
 router.post("/import", requireAuth, importTrades);
+router.delete("/all", requireAuth, deleteAllTrades);
 router.patch("/:id", requireAuth, updateTrade);
 router.delete("/:id", requireAuth, deleteTrade);
 router.post("/recalculate", requireAuth, recalculateAllTrades);

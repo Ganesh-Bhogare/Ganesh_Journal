@@ -111,6 +111,7 @@ export interface ITrade extends Document {
     // External sync identifiers
     source?: string;
     externalTradeId?: string;
+    fundedAccountId?: string;
 
     // Legacy fields for backwards compatibility
     tags?: string[];
@@ -213,6 +214,7 @@ const TradeSchema = new Schema<ITrade>({
     // External sync identifiers
     source: { type: String },
     externalTradeId: { type: String, index: true },
+    fundedAccountId: { type: String, index: true },
 
     // Legacy fields
     tags: [{ type: String }],

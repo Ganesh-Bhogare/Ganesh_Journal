@@ -9,9 +9,9 @@ export default defineConfig({
             registerType: "autoUpdate",
             includeAssets: ["favicon.svg", "robots.txt"],
             manifest: {
-                name: "Trade Journal",
-                short_name: "TradeJournal",
-                description: "Trading Journal and News Analysis App",
+                name: "Trade Tracker",
+                short_name: "TradeTracker",
+                description: "Trade Tracker and News Analysis App",
                 theme_color: "#000000",
                 background_color: "#000000",
                 display: "standalone",

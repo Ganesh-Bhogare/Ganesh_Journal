@@ -750,13 +750,6 @@ export default function Analytics() {
                             >
                                 {aiLoading ? 'Analyzing...' : 'Generate'}
                             </button>
-                            <button
-                                onClick={fetchGptInsights}
-                                className="px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
-                                title="Requires OPENAI_API_KEY on server"
-                            >
-                                {gptLoading ? 'GPT...' : 'GPT Analyze'}
-                            </button>
                         </div>
                     </div>
 
@@ -928,61 +921,6 @@ export default function Analytics() {
                         <div className="text-neutral-500 text-sm">Click Generate to analyze your latest trades.</div>
                     )}
 
-                    {gpt?.result && (
-                        <div className="mt-8">
-                            <div className="font-semibold mb-2">GPT Summary</div>
-                            <div className="bg-neutral-800/30 border border-neutral-800 rounded-lg p-4 text-sm text-neutral-200 space-y-3">
-                                <div>
-                                    <div className="text-neutral-400 text-xs mb-1">Model</div>
-                                    <div>{gpt.model} • Trades: {gpt.tradesAnalyzed} • Images: {gpt.imagesUsed ?? 0}</div>
-                                </div>
-
-                                {gpt.result?.summary?.shortSummary && (
-                                    <div>
-                                        <div className="text-neutral-400 text-xs mb-1">Overall</div>
-                                        <div>{gpt.result.summary.shortSummary}</div>
-                                    </div>
-                                )}
-
-                                {(gpt.result?.actionPlan?.length || 0) > 0 && (
-                                    <div>
-                                        <div className="text-neutral-400 text-xs mb-1">Action Plan</div>
-                                        <div className="space-y-1">
-                                            {gpt.result.actionPlan.slice(0, 6).map((s: string, idx: number) => (
-                                                <div key={idx}>• {s}</div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {(gpt.result?.repeatedMistakes?.length || 0) > 0 && (
-                                    <div>
-                                        <div className="text-neutral-400 text-xs mb-1">Top Mistakes</div>
-                                        <div className="space-y-2">
-                                            {gpt.result.repeatedMistakes.slice(0, 3).map((m: any, idx: number) => (
-                                                <div key={idx} className="border border-neutral-800 rounded-md p-3 bg-neutral-900/30">
-                                                    <div className="font-semibold">{m.title}</div>
-                                                    {m.evidence && <div className="text-neutral-300">Evidence: {m.evidence}</div>}
-                                                    {m.fix && <div className="text-neutral-200">Fix: {m.fix}</div>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {(gpt.result?.strengths?.length || 0) > 0 && (
-                                    <div>
-                                        <div className="text-neutral-400 text-xs mb-1">Strengths to scale</div>
-                                        <div className="space-y-1">
-                                            {gpt.result.strengths.slice(0, 5).map((s: any, idx: number) => (
-                                                <div key={idx}>• {typeof s === 'string' ? s : s?.title || 'Strength'}</div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </AnimatedCard>
             </div>
         </div>

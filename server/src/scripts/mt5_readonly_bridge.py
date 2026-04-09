@@ -50,6 +50,13 @@ class BridgeConfig:
     mt5_password: str
     mt5_server: str
     mt5_path: Optional[str]
+    bridge_user_id: str
+
+
+@dataclass
+class RunOptions:
+    lookback_days: Optional[int] = None
+    ignore_state: bool = False
 
 
 def load_env_file(path: Path) -> None:
@@ -104,6 +111,7 @@ def read_config() -> BridgeConfig:
 
     mt5_login = int(mt5_login_raw)
     account_id = os.environ.get("FUNDED_ACCOUNT_ID", str(mt5_login)).strip()
+    bridge_user_id = os.environ.get("BRIDGE_USER_ID", "").strip()
     poll_seconds = int(os.environ.get("BRIDGE_POLL_SECONDS", "20"))
     lookback_days = int(os.environ.get("BRIDGE_LOOKBACK_DAYS", "5"))
     state_file = Path(os.environ.get("BRIDGE_STATE_FILE", "server/src/scripts/.funded_bridge_state.json"))
@@ -120,6 +128,7 @@ def read_config() -> BridgeConfig:
         mt5_password=mt5_password,
         mt5_server=mt5_server,
         mt5_path=mt5_path,
+        bridge_user_id=bridge_user_id,
     )
 
 
@@ -147,7 +156,7 @@ def initialize_mt5(cfg: BridgeConfig) -> None:
         raise RuntimeError(
             "MT5 initialize failed: "
             f"{err}. Ensure MetaTrader 5 desktop terminal is installed/open, "
-            "or set MT5_PATH in funded_bridge.env to terminal64.exe"
+            "or set MT5 Terminal Path in Funded Account settings"
         )
 
     authorized = mt5.login(cfg.mt5_login, password=cfg.mt5_password, server=cfg.mt5_server)
@@ -155,9 +164,11 @@ def initialize_mt5(cfg: BridgeConfig) -> None:
         raise RuntimeError(f"MT5 login failed: {mt5.last_error()}")
 
 
-def build_trade_payloads(cfg: BridgeConfig, state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def build_trade_payloads(cfg: BridgeConfig, state: Dict[str, Any], options: Optional[RunOptions] = None) -> List[Dict[str, Any]]:
+    options = options or RunOptions()
     now = datetime.now(timezone.utc)
-    since = now - timedelta(days=cfg.lookback_days)
+    effective_lookback_days = options.lookback_days if options.lookback_days is not None else cfg.lookback_days
+    since = now - timedelta(days=max(1, int(effective_lookback_days)))
 
     deals = mt5.history_deals_get(since, now)
     if deals is None:
@@ -170,7 +181,7 @@ def build_trade_payloads(cfg: BridgeConfig, state: Dict[str, Any]) -> List[Dict[
             continue
         by_position.setdefault(pid, []).append(d)
 
-    last_ticket = int(state.get("last_ticket", 0) or 0)
+    last_ticket = 0 if options.ignore_state else int(state.get("last_ticket", 0) or 0)
     rows: List[Dict[str, Any]] = []
 
     for pid, items in by_position.items():
@@ -245,6 +256,7 @@ def push_sync(cfg: BridgeConfig, trades: List[Dict[str, Any]], open_positions: L
         "accountId": cfg.account_id,
         "server": cfg.mt5_server,
         "provider": cfg.provider,
+        "bridgeUserId": cfg.bridge_user_id,
         "trades": trades,
         "openPositions": open_positions,
     }
@@ -261,9 +273,10 @@ def push_sync(cfg: BridgeConfig, trades: List[Dict[str, Any]], open_positions: L
     return resp.json() if resp.content else {"success": True}
 
 
-def run_once(cfg: BridgeConfig) -> None:
+def run_once(cfg: BridgeConfig, options: Optional[RunOptions] = None) -> None:
+    options = options or RunOptions()
     state = to_state(cfg.state_file)
-    trades = build_trade_payloads(cfg, state)
+    trades = build_trade_payloads(cfg, state, options)
     open_positions = build_open_positions_payloads()
 
     if not trades and not open_positions:
@@ -271,7 +284,7 @@ def run_once(cfg: BridgeConfig) -> None:
         return
 
     result = push_sync(cfg, trades, open_positions)
-    if trades:
+    if trades and not options.ignore_state:
         max_ticket = max(int(t["ticket"]) for t in trades)
         state["last_ticket"] = max_ticket
         save_state(cfg.state_file, state)
@@ -282,20 +295,27 @@ def run_once(cfg: BridgeConfig) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="MT5 funded read-only bridge")
     parser.add_argument("--once", action="store_true", help="Run one sync cycle and exit")
+    parser.add_argument("--backfill-days", type=int, default=None, help="Override lookback window for this run (e.g. 180)")
+    parser.add_argument("--ignore-state", action="store_true", help="Ignore last synced ticket and re-scan the selected lookback window")
     args = parser.parse_args()
 
     try:
         cfg = read_config()
         initialize_mt5(cfg)
 
+        run_options = RunOptions(
+            lookback_days=args.backfill_days,
+            ignore_state=bool(args.ignore_state),
+        )
+
         if args.once:
-            run_once(cfg)
+            run_once(cfg, run_options)
             return 0
 
         print("[bridge] Started read-only sync loop")
         while True:
             try:
-                run_once(cfg)
+                run_once(cfg, run_options)
             except Exception as loop_err:
                 print(f"[bridge] Sync error: {loop_err}")
             time.sleep(cfg.poll_seconds)

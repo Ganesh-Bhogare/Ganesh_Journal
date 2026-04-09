@@ -39,6 +39,21 @@ type FundedStatusResponse = {
             openTime?: string
         }>
     }
+    bridge?: {
+        running?: boolean
+        pid?: number | null
+        mode?: 'once' | 'loop' | null
+        startedAt?: string | null
+        lastExitCode?: number | null
+        lastOutput?: string
+    }
+    accounts?: Array<{
+        accountId: string
+        trades: number
+        netPnl: number
+        lastSyncedAt?: string | null
+    }>
+    selectedAccountId?: string | null
 }
 
 type FundedPrefs = {
@@ -47,6 +62,11 @@ type FundedPrefs = {
     fundedTerminalType: 'mt4' | 'mt5' | 'other'
     fundedAccountId: string
     fundedServer: string
+    fundedMt5Login: string
+    fundedMt5Password: string
+    fundedMt5Path: string
+    fundedBridgePollSeconds: string
+    fundedBridgeLookbackDays: string
 }
 
 export default function FundedAccount() {
@@ -56,17 +76,27 @@ export default function FundedAccount() {
     const [saving, setSaving] = useState(false)
     const [saveError, setSaveError] = useState('')
     const [saveOk, setSaveOk] = useState('')
+    const [bridgeBusy, setBridgeBusy] = useState(false)
+    const [bridgeMsg, setBridgeMsg] = useState('')
+    const [selectedAccountId, setSelectedAccountId] = useState('all')
     const [prefs, setPrefs] = useState<FundedPrefs>({
         fundedReadOnlyEnabled: false,
         fundedProvider: 'Goat Funded Trader',
         fundedTerminalType: 'mt5',
         fundedAccountId: '',
         fundedServer: '',
+        fundedMt5Login: '',
+        fundedMt5Password: '',
+        fundedMt5Path: '',
+        fundedBridgePollSeconds: '20',
+        fundedBridgeLookbackDays: '3650',
     })
 
-    const fetchStatus = async () => {
+    const fetchStatus = async (accountId?: string) => {
         try {
-            const res = await api.get('/funded/status')
+            const params: any = {}
+            if (accountId && accountId !== 'all') params.accountId = accountId
+            const res = await api.get('/funded/status', { params })
             setData(res.data || null)
         } catch (err) {
             console.error('Failed to fetch funded status', err)
@@ -86,6 +116,11 @@ export default function FundedAccount() {
                 fundedTerminalType: (p.fundedTerminalType === 'mt4' || p.fundedTerminalType === 'other') ? p.fundedTerminalType : 'mt5',
                 fundedAccountId: p.fundedAccountId != null ? String(p.fundedAccountId) : '',
                 fundedServer: p.fundedServer != null ? String(p.fundedServer) : '',
+                fundedMt5Login: p.fundedMt5Login != null ? String(p.fundedMt5Login) : '',
+                fundedMt5Password: '',
+                fundedMt5Path: p.fundedMt5Path != null ? String(p.fundedMt5Path) : '',
+                fundedBridgePollSeconds: p.fundedBridgePollSeconds != null ? String(p.fundedBridgePollSeconds) : '20',
+                fundedBridgeLookbackDays: p.fundedBridgeLookbackDays != null ? String(p.fundedBridgeLookbackDays) : '3650',
             })
         } catch (err) {
             console.error('Failed to load funded preferences', err)
@@ -106,6 +141,11 @@ export default function FundedAccount() {
                 fundedTerminalType: prefs.fundedTerminalType,
                 fundedAccountId: prefs.fundedAccountId || undefined,
                 fundedServer: prefs.fundedServer || undefined,
+                fundedMt5Login: prefs.fundedMt5Login || undefined,
+                fundedMt5Password: prefs.fundedMt5Password || undefined,
+                fundedMt5Path: prefs.fundedMt5Path || undefined,
+                fundedBridgePollSeconds: prefs.fundedBridgePollSeconds ? Number(prefs.fundedBridgePollSeconds) : undefined,
+                fundedBridgeLookbackDays: prefs.fundedBridgeLookbackDays ? Number(prefs.fundedBridgeLookbackDays) : undefined,
                 fundedExecutionEnabled: false,
             } as Record<string, any>
 
@@ -121,21 +161,99 @@ export default function FundedAccount() {
         }
     }
 
+    const persistPrefsForBridge = async (forceEnable = false) => {
+        const payload = {
+            fundedReadOnlyEnabled: forceEnable ? true : prefs.fundedReadOnlyEnabled,
+            fundedProvider: prefs.fundedProvider || undefined,
+            fundedTerminalType: prefs.fundedTerminalType,
+            fundedAccountId: prefs.fundedAccountId || undefined,
+            fundedServer: prefs.fundedServer || undefined,
+            fundedMt5Login: prefs.fundedMt5Login || undefined,
+            fundedMt5Password: prefs.fundedMt5Password || undefined,
+            fundedMt5Path: prefs.fundedMt5Path || undefined,
+            fundedBridgePollSeconds: prefs.fundedBridgePollSeconds ? Number(prefs.fundedBridgePollSeconds) : undefined,
+            fundedBridgeLookbackDays: prefs.fundedBridgeLookbackDays ? Number(prefs.fundedBridgeLookbackDays) : undefined,
+            fundedExecutionEnabled: false,
+        } as Record<string, any>
+
+        Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+        await api.put('/user/preferences', payload)
+
+        if (forceEnable && !prefs.fundedReadOnlyEnabled) {
+            setPrefs((prev) => ({ ...prev, fundedReadOnlyEnabled: true }))
+        }
+    }
+
+    const startBridge = async (opts?: { once?: boolean; ignoreState?: boolean; backfillDays?: number }) => {
+        if (bridgeBusy) return
+        setBridgeBusy(true)
+        setBridgeMsg('')
+        try {
+            await persistPrefsForBridge(true)
+
+            const { data } = await api.post('/funded/bridge/start', {
+                once: Boolean(opts?.once),
+                ignoreState: Boolean(opts?.ignoreState),
+                backfillDays: opts?.backfillDays,
+            })
+            setBridgeMsg(`Bridge started (${data?.mode || 'loop'})`)
+            await fetchStatus(selectedAccountId)
+        } catch (err: any) {
+            const msg = err?.response?.data?.error
+            setBridgeMsg(typeof msg === 'string' ? msg : 'Failed to start bridge')
+        } finally {
+            setBridgeBusy(false)
+        }
+    }
+
+    const stopBridge = async () => {
+        if (bridgeBusy) return
+        setBridgeBusy(true)
+        setBridgeMsg('')
+        try {
+            const { data } = await api.post('/funded/bridge/stop')
+            setBridgeMsg(data?.stopped ? 'Bridge stopped' : 'Bridge was not running')
+            await fetchStatus(selectedAccountId)
+        } catch (err: any) {
+            const msg = err?.response?.data?.error
+            setBridgeMsg(typeof msg === 'string' ? msg : 'Failed to stop bridge')
+        } finally {
+            setBridgeBusy(false)
+        }
+    }
+
     useEffect(() => {
-        fetchStatus()
         loadPrefs()
+    }, [])
+
+    useEffect(() => {
+        fetchStatus(selectedAccountId)
 
         // Keep funded panel live without forcing manual refresh.
-        const id = window.setInterval(fetchStatus, 20000)
+        const id = window.setInterval(() => fetchStatus(selectedAccountId), 20000)
         return () => window.clearInterval(id)
-    }, [])
+    }, [selectedAccountId])
 
     const funded = data?.funded
     const sync = data?.sync
+    const accountSummaries = Array.isArray(data?.accounts) ? data!.accounts : []
     const recent = Array.isArray(sync?.recent) ? sync?.recent : []
     const live = data?.live
+    const bridge = data?.bridge
     const openPositions = Array.isArray(live?.openPositions) ? live.openPositions : []
     const mappingReady = Boolean(funded?.enabled && String(funded?.accountId || '').trim())
+
+    const bridgeStatusHint = useMemo(() => {
+        const out = String(bridge?.lastOutput || '').toLowerCase()
+        if (bridge?.running) return 'Live sync chal raha hai.'
+        if (!out && (sync?.totalSynced || 0) > 0) return 'Bridge stopped. Last sync successful.'
+        if (out.includes('mt5 initialize failed')) return 'MT5 app open karo. Agar zarurat ho to MT5 Terminal Path fill karo.'
+        if (out.includes('mt5 login failed')) return 'MT5 Login/Password/Server verify karo.'
+        if (out.includes('sync failed (401)')) return 'Bridge auth failed. Server token/config check karo.'
+        if (out.includes('no read-only linked user found')) return 'Account ID ya Server mapping mismatch hai.'
+        if ((sync?.totalSynced || 0) === 0) return 'Backfill Now dabao to old trades import ho jayenge.'
+        return 'Bridge stopped.'
+    }, [bridge?.running, bridge?.lastOutput, sync?.totalSynced])
 
     const statusLabel = useMemo(() => {
         if (!funded?.enabled) return 'Not linked'
@@ -162,9 +280,19 @@ export default function FundedAccount() {
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
+                        <select
+                            value={selectedAccountId}
+                            onChange={(e) => setSelectedAccountId(e.target.value)}
+                            className="px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-sm text-neutral-100 focus:outline-none"
+                        >
+                            <option value="all">All Accounts</option>
+                            {accountSummaries.map((a) => (
+                                <option key={a.accountId} value={a.accountId}>{a.accountId}</option>
+                            ))}
+                        </select>
                         <button
                             type="button"
-                            onClick={fetchStatus}
+                            onClick={() => fetchStatus(selectedAccountId)}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-700/60 text-white hover:bg-blue-900/35 transition-colors"
                         >
                             <RefreshCcw size={15} /> Refresh
@@ -177,7 +305,7 @@ export default function FundedAccount() {
                 <h3 className="text-lg font-semibold mb-4">Funded Account Mapping (Save Here)</h3>
                 <div className="space-y-4">
                     <div className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-                        Execution disabled by design. Sirf read-only account mapping save hota hai.
+                        Execution disabled by design. Yahan credentials save karke UI se bridge start/stop/backfill kar sakte ho.
                     </div>
 
                     {saveError ? <div className="text-sm text-red-400">{saveError}</div> : null}
@@ -248,16 +376,107 @@ export default function FundedAccount() {
                                 placeholder="e.g. Broker-Server-01"
                             />
                         </div>
+
+                        <div>
+                            <label className="block text-sm text-neutral-300 mb-2">MT5 Login</label>
+                            <input
+                                type="text"
+                                value={prefs.fundedMt5Login}
+                                onChange={(e) => setPrefs({ ...prefs, fundedMt5Login: e.target.value })}
+                                disabled={prefLoading}
+                                className="w-full px-3 py-2 bg-neutral-200/60 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:border-brand disabled:opacity-60"
+                                placeholder="e.g. 314650897"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-neutral-300 mb-2">MT5 Password</label>
+                            <input
+                                type="password"
+                                value={prefs.fundedMt5Password}
+                                onChange={(e) => setPrefs({ ...prefs, fundedMt5Password: e.target.value })}
+                                disabled={prefLoading}
+                                className="w-full px-3 py-2 bg-neutral-200/60 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:border-brand disabled:opacity-60"
+                                placeholder="MT5 account password"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-neutral-300 mb-2">Bridge Poll Seconds</label>
+                            <input
+                                type="number"
+                                min={5}
+                                value={prefs.fundedBridgePollSeconds}
+                                onChange={(e) => setPrefs({ ...prefs, fundedBridgePollSeconds: e.target.value })}
+                                disabled={prefLoading}
+                                className="w-full px-3 py-2 bg-neutral-200/60 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:border-brand disabled:opacity-60"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-neutral-300 mb-2">Backfill Days</label>
+                            <input
+                                type="number"
+                                min={1}
+                                value={prefs.fundedBridgeLookbackDays}
+                                onChange={(e) => setPrefs({ ...prefs, fundedBridgeLookbackDays: e.target.value })}
+                                disabled={prefLoading}
+                                className="w-full px-3 py-2 bg-neutral-200/60 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:border-brand disabled:opacity-60"
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="block text-sm text-neutral-300 mb-2">MT5 Terminal Path (Optional)</label>
+                            <input
+                                type="text"
+                                value={prefs.fundedMt5Path}
+                                onChange={(e) => setPrefs({ ...prefs, fundedMt5Path: e.target.value })}
+                                disabled={prefLoading}
+                                className="w-full px-3 py-2 bg-neutral-200/60 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:border-brand disabled:opacity-60"
+                                placeholder="C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+                            />
+                        </div>
                     </div>
 
                     <div className="text-xs text-neutral-500">
-                        Password/API key yahan save nahi hota. Bridge token server side hi secure rehta hai.
+                        Bridge token server side secure rehta hai. Credentials ke baad Save karo, phir niche se bridge start/backfill karo.
+                    </div>
+
+                    {bridgeMsg ? <div className="text-sm text-cyan-300">{bridgeMsg}</div> : null}
+
+                    <div className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/50 rounded-lg p-3">
+                        Bridge Status: <span className={bridge?.running ? 'text-green-400' : 'text-amber-300'}>{bridge?.running ? 'Running' : 'Stopped'}</span>
+                        <span className="text-slate-400"> | {bridgeStatusHint}</span>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                         <GradientButton onClick={savePrefs} disabled={saving || prefLoading}>
                             {saving ? 'Saving...' : 'Save Funded Settings'}
                         </GradientButton>
+                        <button
+                            type="button"
+                            onClick={() => startBridge({ once: false, ignoreState: false })}
+                            disabled={bridgeBusy || saving || prefLoading}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-green-700 text-green-300 hover:bg-green-900/30 transition-colors disabled:opacity-60"
+                        >
+                            Start Live Sync
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => startBridge({ once: true, ignoreState: true, backfillDays: 3650 })}
+                            disabled={bridgeBusy || saving || prefLoading}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan-700 text-cyan-300 hover:bg-cyan-900/30 transition-colors disabled:opacity-60"
+                        >
+                            Backfill All History
+                        </button>
+                        <button
+                            type="button"
+                            onClick={stopBridge}
+                            disabled={bridgeBusy || saving || prefLoading}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-red-700 text-red-300 hover:bg-red-900/30 transition-colors disabled:opacity-60"
+                        >
+                            Stop Bridge
+                        </button>
                         <button
                             type="button"
                             onClick={loadPrefs}
@@ -303,8 +522,29 @@ export default function FundedAccount() {
                         <Radio size={14} className="text-cyan-300" />
                         Recent Funded Imports
                     </div>
-                    <div className="text-xs text-slate-400">Account: {funded?.accountId || 'N/A'} | Server: {funded?.server || 'N/A'}</div>
+                    <div className="text-xs text-slate-400">View: {selectedAccountId === 'all' ? 'All Accounts' : selectedAccountId} | Server: {funded?.server || 'N/A'}</div>
                 </div>
+
+                {accountSummaries.length > 0 && (
+                    <div className="mb-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {accountSummaries.map((acc) => (
+                            <button
+                                key={acc.accountId}
+                                type="button"
+                                onClick={() => setSelectedAccountId(acc.accountId)}
+                                className={`text-left rounded-lg border px-3 py-2 transition-colors ${selectedAccountId === acc.accountId
+                                    ? 'border-cyan-500/70 bg-cyan-500/10'
+                                    : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-700'}`}
+                            >
+                                <div className="text-xs text-slate-400">{acc.accountId}</div>
+                                <div className="text-sm text-slate-200">Trades: {acc.trades}</div>
+                                <div className={`text-xs ${(acc.netPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    Net: {(acc.netPnl || 0) >= 0 ? '+' : ''}${Number(acc.netPnl || 0).toFixed(2)}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 {loading ? (
                     <div className="text-sm text-slate-400 py-6">Loading funded sync data...</div>

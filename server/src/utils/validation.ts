@@ -37,6 +37,20 @@ export const userPreferencesSchema = z.object({
     fundedTerminalType: z.enum(["mt4", "mt5", "other"]).optional(),
     fundedAccountId: z.string().min(1).max(80).optional(),
     fundedServer: z.string().min(1).max(120).optional(),
+    fundedMt5Login: z.string().min(1).max(80).optional(),
+    fundedMt5Password: z.string().min(1).max(200).optional(),
+    fundedMt5Path: z.string().min(1).max(260).optional(),
+    fundedBridgePollSeconds: z.coerce.number().int().min(5).max(3600).optional(),
+    fundedBridgeLookbackDays: z.coerce.number().int().min(1).max(3650).optional(),
+    fundedAccounts: z.array(
+        z.object({
+            accountId: z.string().min(1).max(80),
+            label: z.string().min(1).max(80).optional(),
+            provider: z.string().max(80).optional(),
+            server: z.string().max(120).optional(),
+        })
+    ).optional(),
+    activeFundedAccountId: z.string().min(1).max(80).optional(),
     fundedExecutionEnabled: z.boolean().optional(),
 });
 
@@ -114,6 +128,8 @@ export const tradeSchema = z.object({
         timeframe: z.string().min(1).optional(),
         timeframes: z.array(z.string().min(1)).optional(),
     }).optional(),
+
+    fundedAccountId: z.string().min(1).max(80).optional(),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

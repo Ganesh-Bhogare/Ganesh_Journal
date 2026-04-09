@@ -31,6 +31,18 @@ export interface IUser extends Document {
         fundedTerminalType?: "mt4" | "mt5" | "other";
         fundedAccountId?: string;
         fundedServer?: string;
+        fundedMt5Login?: string;
+        fundedMt5Password?: string;
+        fundedMt5Path?: string;
+        fundedBridgePollSeconds?: number;
+        fundedBridgeLookbackDays?: number;
+        fundedAccounts?: Array<{
+            accountId: string;
+            label?: string;
+            provider?: string;
+            server?: string;
+        }>;
+        activeFundedAccountId?: string;
         fundedExecutionEnabled?: boolean;
         fundedLiveOpenPositions?: Array<{
             ticket?: string;
@@ -73,6 +85,18 @@ const UserSchema = new Schema<IUser>({
         fundedTerminalType: { type: String, enum: ["mt4", "mt5", "other"], default: "mt5" },
         fundedAccountId: { type: String },
         fundedServer: { type: String },
+        fundedMt5Login: { type: String },
+        fundedMt5Password: { type: String },
+        fundedMt5Path: { type: String },
+        fundedBridgePollSeconds: { type: Number, default: 20 },
+        fundedBridgeLookbackDays: { type: Number, default: 3650 },
+        fundedAccounts: [{
+            accountId: { type: String, required: true },
+            label: { type: String },
+            provider: { type: String },
+            server: { type: String },
+        }],
+        activeFundedAccountId: { type: String },
         fundedExecutionEnabled: { type: Boolean, default: false },
         fundedLiveOpenPositions: [{
             ticket: { type: String },

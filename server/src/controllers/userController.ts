@@ -6,7 +6,12 @@ export async function getPreferences(req: Request & { userId?: string }, res: Re
     try {
         const user = await User.findById(req.userId).select("preferences email name");
         if (!user) return res.status(404).json({ error: "User not found" });
-        return res.json({ preferences: user.preferences || {} });
+        const preferences: any = user.preferences || {};
+        // Never return raw MT5 password to the frontend.
+        if (preferences.fundedMt5Password) {
+            preferences.fundedMt5Password = "";
+        }
+        return res.json({ preferences });
     } catch (_err) {
         return res.status(500).json({ error: "Failed to load preferences" });
     }
