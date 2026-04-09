@@ -526,8 +526,11 @@ export async function serveTradeScreenshot(req: Request & { userId?: string }, r
         }
 
         const field = SCREENSHOT_KIND_TO_FIELD[kind];
-        const screenshotPath = (trade as any)?.[field] as string | undefined;
-        if (!screenshotPath) return res.status(404).json({ error: "Screenshot not found" });
+        const screenshotPathRaw = (trade as any)?.[field] as string | string[] | undefined;
+        const screenshotPath = Array.isArray(screenshotPathRaw) ? screenshotPathRaw[0] : screenshotPathRaw;
+        if (!screenshotPath || typeof screenshotPath !== "string") {
+            return res.status(404).json({ error: "Screenshot not found" });
+        }
 
         if (screenshotPath.startsWith("/uploads/")) {
             const filename = path.basename(screenshotPath);
