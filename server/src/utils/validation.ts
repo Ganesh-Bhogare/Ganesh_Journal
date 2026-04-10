@@ -35,7 +35,7 @@ export const userPreferencesSchema = z.object({
     fundedReadOnlyEnabled: z.boolean().optional(),
     fundedProvider: z.string().min(1).max(80).optional(),
     fundedTerminalType: z.enum(["mt4", "mt5", "other"]).optional(),
-    fundedAccountId: z.string().min(1).max(80).optional(),
+    fundedAccountId: z.string().max(80).optional(),
     fundedServer: z.string().min(1).max(120).optional(),
     fundedMt5Login: z.string().min(1).max(80).optional(),
     fundedMt5Password: z.string().min(1).max(200).optional(),
@@ -50,7 +50,7 @@ export const userPreferencesSchema = z.object({
             server: z.string().max(120).optional(),
         })
     ).optional(),
-    activeFundedAccountId: z.string().min(1).max(80).optional(),
+    activeFundedAccountId: z.string().max(80).optional(),
     fundedExecutionEnabled: z.boolean().optional(),
 });
 

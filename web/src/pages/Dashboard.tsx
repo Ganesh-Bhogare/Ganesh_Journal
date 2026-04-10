@@ -108,8 +108,9 @@ export default function Dashboard() {
             }
 
             const preferred = normalizeAccountId(String(prefs.activeFundedAccountId || ''))
+            const preferredExists = preferred && sanitized.some((item) => item.accountId.toLowerCase() === preferred.toLowerCase())
             setFundedProfiles(sanitized)
-            setSelectedFundedAccountId(preferred || 'all')
+            setSelectedFundedAccountId(preferredExists ? preferred : 'all')
         } catch (err) {
             console.error('Failed to load funded profiles', err)
             setFundedProfiles([])
@@ -118,6 +119,9 @@ export default function Dashboard() {
     }
 
     const persistFundedProfiles = async (profiles: FundedAccountProfile[], activeId: string) => {
+        const normalizedActiveId = activeId && activeId !== 'all' ? activeId : ''
+        const fallbackFundedAccountId = normalizedActiveId || profiles[0]?.accountId || ''
+
         const payload: any = {
             fundedAccounts: profiles.map((profile) => ({
                 accountId: profile.accountId,
@@ -125,10 +129,10 @@ export default function Dashboard() {
                 provider: profile.provider || undefined,
                 server: profile.server || undefined,
             })),
-            activeFundedAccountId: activeId && activeId !== 'all' ? activeId : undefined,
+            activeFundedAccountId: normalizedActiveId,
+            fundedAccountId: fallbackFundedAccountId,
         }
 
-        if (!payload.activeFundedAccountId) delete payload.activeFundedAccountId
         await api.put('/user/preferences', payload)
     }
 
