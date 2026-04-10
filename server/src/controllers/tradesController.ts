@@ -529,7 +529,9 @@ export async function serveTradeScreenshot(req: Request & { userId?: string }, r
         const archived = await TradeScreenshot.findOne({ tradeId: trade._id, userId: req.userId, kind }).select("mimeType data");
         if (archived?.data) {
             res.setHeader("Content-Type", archived.mimeType || "application/octet-stream");
-            res.setHeader("Cache-Control", "private, max-age=86400");
+            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
             return res.send(archived.data);
         }
 
@@ -561,9 +563,14 @@ export async function serveTradeScreenshot(req: Request & { userId?: string }, r
                             { upsert: true, new: true, setDefaultsOnInsert: true }
                         );
                         res.setHeader("Content-Type", fallbackMime);
-                        res.setHeader("Cache-Control", "private, max-age=86400");
+                        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+                        res.setHeader("Pragma", "no-cache");
+                        res.setHeader("Expires", "0");
                         return res.send(fileBuffer);
                     }
+                    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+                    res.setHeader("Pragma", "no-cache");
+                    res.setHeader("Expires", "0");
                     return res.sendFile(abs);
                 }
             }

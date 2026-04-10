@@ -22,6 +22,8 @@ export default function Trades() {
     const [exporting, setExporting] = useState(false)
     const [importing, setImporting] = useState(false)
     const [savingSnapshot, setSavingSnapshot] = useState(false)
+    const [snapshotVersion, setSnapshotVersion] = useState(0)
+    const [chartPreviewSrc, setChartPreviewSrc] = useState<string | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     const snapshotInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -30,6 +32,15 @@ export default function Trades() {
         if (/^https?:\/\//i.test(path)) return path
         const base = (api.defaults.baseURL || '').replace(/\/api\/?$/, '')
         return `${base}${path}`
+    }
+
+    const tradeScreenshotUrl = (trade: any, kind: 'chart' | 'entry' = 'chart') => {
+        if (!trade) return undefined
+        if (!trade?._id) return fileUrl(trade?.chartScreenshot)
+
+        const fromUpdatedAt = trade?.updatedAt ? new Date(trade.updatedAt).getTime() : 0
+        const v = snapshotVersion || fromUpdatedAt || 1
+        return fileUrl(`/api/trades/${encodeURIComponent(trade._id)}/screenshots/${kind}?v=${v}`)
     }
 
     const getFundedAccountId = (trade: any) => {
@@ -555,6 +566,40 @@ export default function Trades() {
         fetchFundedAccounts()
     }, [])
 
+    useEffect(() => {
+        let isMounted = true
+        let objectUrl: string | null = null
+
+        const loadChartSnapshot = async () => {
+            const tradeId = viewingTrade?._id
+            if (!tradeId || !viewingTrade?.chartScreenshot) {
+                if (isMounted) setChartPreviewSrc(null)
+                return
+            }
+
+            if (isMounted) setChartPreviewSrc(null)
+            try {
+                const { data } = await api.get(`/trades/${encodeURIComponent(tradeId)}/screenshots/chart`, { responseType: 'blob' })
+                if (!isMounted) return
+                if (data && data.size > 0) {
+                    objectUrl = URL.createObjectURL(data)
+                    setChartPreviewSrc(objectUrl)
+                } else {
+                    setChartPreviewSrc(null)
+                }
+            } catch {
+                if (isMounted) setChartPreviewSrc(null)
+            }
+        }
+
+        loadChartSnapshot()
+
+        return () => {
+            isMounted = false
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
+        }
+    }, [viewingTrade?._id, viewingTrade?.chartScreenshot, viewingTrade?.updatedAt, snapshotVersion])
+
     const fundedAccountOptions = Array.from(new Set([
         ...fundedAccounts,
         ...trades.map((t) => getFundedAccountId(t)).filter(Boolean),
@@ -591,14 +636,8 @@ export default function Trades() {
     }
 
     const handleView = (trade: any) => {
-        const id = trade?._id
-        if (id) {
-            navigate(`/trade-chart?tradeId=${encodeURIComponent(id)}`)
-            return
-        }
-
-        // Fallback if id is missing
         setViewingTrade(trade)
+        setSnapshotVersion(0)
     }
 
     const handleSnapshotFile = async (file: File) => {
@@ -613,6 +652,7 @@ export default function Trades() {
                 headers: { 'Content-Type': 'multipart/form-data' },
             })
             setViewingTrade(data)
+            setSnapshotVersion(Date.now())
             fetchTrades()
         } catch (err) {
             console.error('Failed to save chart snapshot', err)
@@ -820,7 +860,7 @@ export default function Trades() {
                                                         <button
                                                             onClick={() => handleView(trade)}
                                                             className="p-2 text-neutral-200 hover:text-white hover:bg-neutral-800 rounded transition-colors"
-                                                            title="Open Auto Position Tool"
+                                                            title="View trade"
                                                         >
                                                             <Eye size={16} />
                                                         </button>
@@ -898,7 +938,7 @@ export default function Trades() {
                                     }}
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
                                 >
-                                    Open Auto Position Tool
+                                    Open Trade Chart
                                 </button>
                                 <button
                                     onClick={() => snapshotInputRef.current?.click()}
@@ -906,7 +946,14 @@ export default function Trades() {
                                     className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors disabled:opacity-60"
                                     title="Upload your saved chart screenshot"
                                 >
-                                    {savingSnapshot ? 'Saving…' : 'Save Snapshot'}
+                                    {savingSnapshot ? 'Saving…' : (viewingTrade?.chartScreenshot ? 'Replace Snapshot' : 'Add Snapshot')}
+                                </button>
+                                <button
+                                    onClick={() => setSnapshotVersion(Date.now())}
+                                    className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-brand transition-colors"
+                                    title="Refresh snapshot preview"
+                                >
+                                    Refresh Snapshot
                                 </button>
                                 <button
                                     onClick={() => setViewingTrade(null)}
@@ -993,17 +1040,13 @@ export default function Trades() {
                                 <div className="mt-3 p-3 rounded-lg bg-neutral-800/25 border border-neutral-800">
                                     <div className="text-xs text-neutral-400 mb-2">Saved Snapshot</div>
                                     <a
-                                        href={viewingTrade?._id
-                                            ? fileUrl(`/api/trades/${encodeURIComponent(viewingTrade._id)}/screenshots/chart`)
-                                            : fileUrl(viewingTrade.chartScreenshot)}
+                                        href={chartPreviewSrc || tradeScreenshotUrl(viewingTrade, 'chart')}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="block"
                                     >
                                         <img
-                                            src={viewingTrade?._id
-                                                ? fileUrl(`/api/trades/${encodeURIComponent(viewingTrade._id)}/screenshots/chart`)
-                                                : fileUrl(viewingTrade.chartScreenshot)}
+                                            src={chartPreviewSrc || tradeScreenshotUrl(viewingTrade, 'chart')}
                                             alt="Saved chart snapshot"
                                             className="w-full max-h-48 object-contain rounded-md border border-neutral-800 bg-neutral-900"
                                         />

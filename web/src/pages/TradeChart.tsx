@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { BaselineSeries, CandlestickSeries, LineSeries, createChart, createSeriesMarkers, type CandlestickData, type IChartApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts'
+import { CandlestickSeries, createChart, createSeriesMarkers, type CandlestickData, type IChartApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import { api } from '../lib/api'
@@ -301,73 +301,6 @@ export default function TradeChart() {
             })
         }
 
-        // Auto position-tool style overlay (risk/reward boxes between entry time and exit/current candle).
-        if (candles.length && entryPrice !== undefined && stopLoss !== undefined && takeProfit !== undefined) {
-            const firstTs = Number(candles[0].time)
-            const lastTs = Number(candles[candles.length - 1].time)
-
-            const entryTsRaw = entryTime && !Number.isNaN(entryTime.getTime()) ? Number(toUtcSeconds(entryTime)) : firstTs
-            const exitTsRaw = exitTime && !Number.isNaN(exitTime.getTime()) ? Number(toUtcSeconds(exitTime)) : lastTs
-
-            const fromTs = Math.max(firstTs, Math.min(entryTsRaw, lastTs)) as UTCTimestamp
-            const clampedTo = Math.max(Number(fromTs), Math.min(exitTsRaw, lastTs)) as UTCTimestamp
-
-            // Series setData needs strictly increasing times when 2+ points are supplied.
-            // If both endpoints collapse to the same candle, try using the next candle.
-            let toTs = clampedTo
-            if (Number(toTs) <= Number(fromTs)) {
-                const next = candles.find((c) => Number(c.time) > Number(fromTs))
-                if (next) toTs = next.time as UTCTimestamp
-            }
-
-            const lineData = Number(toTs) > Number(fromTs)
-                ? [{ time: fromTs, value: entryPrice }, { time: toTs, value: entryPrice }]
-                : [{ time: fromTs, value: entryPrice }]
-
-            const rewardData = Number(toTs) > Number(fromTs)
-                ? [{ time: fromTs, value: takeProfit }, { time: toTs, value: takeProfit }]
-                : [{ time: fromTs, value: takeProfit }]
-
-            const riskData = Number(toTs) > Number(fromTs)
-                ? [{ time: fromTs, value: stopLoss }, { time: toTs, value: stopLoss }]
-                : [{ time: fromTs, value: stopLoss }]
-
-            const entryPath = chart.addSeries(LineSeries, {
-                color: 'rgba(250, 204, 21, 0.9)',
-                lineWidth: 2,
-                lineStyle: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-            })
-            entryPath.setData(lineData)
-
-            const rewardZone = chart.addSeries(BaselineSeries, {
-                baseValue: { type: 'price', price: entryPrice },
-                topLineColor: 'rgba(34, 197, 94, 0.78)',
-                topFillColor1: 'rgba(34, 197, 94, 0.28)',
-                topFillColor2: 'rgba(34, 197, 94, 0.08)',
-                bottomLineColor: 'rgba(34, 197, 94, 0.0)',
-                bottomFillColor1: 'rgba(34, 197, 94, 0.0)',
-                bottomFillColor2: 'rgba(34, 197, 94, 0.0)',
-                priceLineVisible: false,
-                lastValueVisible: false,
-            })
-            rewardZone.setData(rewardData)
-
-            const riskZone = chart.addSeries(BaselineSeries, {
-                baseValue: { type: 'price', price: entryPrice },
-                topLineColor: 'rgba(239, 68, 68, 0.0)',
-                topFillColor1: 'rgba(239, 68, 68, 0.0)',
-                topFillColor2: 'rgba(239, 68, 68, 0.0)',
-                bottomLineColor: 'rgba(239, 68, 68, 0.82)',
-                bottomFillColor1: 'rgba(239, 68, 68, 0.28)',
-                bottomFillColor2: 'rgba(239, 68, 68, 0.1)',
-                priceLineVisible: false,
-                lastValueVisible: false,
-            })
-            riskZone.setData(riskData)
-        }
-
         if (candles.length) {
             chart.timeScale().fitContent()
         }
@@ -528,11 +461,6 @@ export default function TradeChart() {
                     )}
                 </div>
 
-                {candles.length && (
-                    <div className="mt-3 text-sm text-neutral-400">
-                        Auto Position Tool active: Entry (yellow), Reward zone (green), Risk zone (red) are drawn from your saved trade values and entry/exit time.
-                    </div>
-                )}
             </AnimatedCard>
 
             <AnimatedCard disableHover>
