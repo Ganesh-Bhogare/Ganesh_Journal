@@ -5,8 +5,6 @@ import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import { api } from '../lib/api'
 
-type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h'
-
 function toUtcSeconds(d: Date): UTCTimestamp {
     return Math.floor(d.getTime() / 1000) as UTCTimestamp
 }
@@ -84,27 +82,13 @@ export default function TradeChart() {
     const [params] = useSearchParams()
 
     const tradeId = params.get('tradeId') || ''
-    const tfParam = (params.get('tf') || '').toLowerCase()
-
-    const initialTimeframe: Timeframe =
-        tfParam === '1m' || tfParam === '1' ? '1m'
-            : tfParam === '15m' || tfParam === '15' ? '15m'
-                : tfParam === '1h' || tfParam === '60' ? '1h'
-                    : tfParam === '4h' || tfParam === '240' ? '4h'
-                        : '5m'
-
     const [loading, setLoading] = useState(true)
     const [trade, setTrade] = useState<any>(null)
-    const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe)
     const [candles, setCandles] = useState<CandlestickData[]>([])
     const [uploadingSnapshot, setUploadingSnapshot] = useState(false)
-    const fileInputRef = useRef<HTMLInputElement | null>(null)
     const snapshotInputRef = useRef<HTMLInputElement | null>(null)
-
-    const storageKey = useMemo(() => {
-        const instrument = String(trade?.instrument || 'unknown')
-        return `candles:${instrument}:${timeframe}`
-    }, [trade?.instrument, timeframe])
+    const [entryImageSrc, setEntryImageSrc] = useState<string | null>(null)
+    const [chartImageSrc, setChartImageSrc] = useState<string | null>(null)
 
     const chartContainerRef = useRef<HTMLDivElement | null>(null)
     const chartRef = useRef<IChartApi | null>(null)
@@ -144,20 +128,52 @@ export default function TradeChart() {
     }, [tradeId])
 
     useEffect(() => {
-        // load saved candles for this instrument + timeframe
-        try {
-            const raw = localStorage.getItem(storageKey)
-            if (!raw) {
-                setCandles([])
+        let isMounted = true
+        let entryObjectUrl: string | null = null
+        let chartObjectUrl: string | null = null
+
+        const loadImages = async () => {
+            if (!tradeId) {
+                if (isMounted) {
+                    setEntryImageSrc(null)
+                    setChartImageSrc(null)
+                }
                 return
             }
-            const parsed = JSON.parse(raw) as CandlestickData[]
-            if (Array.isArray(parsed)) setCandles(parsed)
-            else setCandles([])
-        } catch {
-            setCandles([])
+
+            try {
+                const entryRes = await api.get(`/trades/${encodeURIComponent(tradeId)}/screenshots/entry`, { responseType: 'blob' })
+                if (entryRes.data && entryRes.data.size > 0) {
+                    entryObjectUrl = URL.createObjectURL(entryRes.data)
+                    if (isMounted) setEntryImageSrc(entryObjectUrl)
+                } else if (isMounted) {
+                    setEntryImageSrc(null)
+                }
+            } catch {
+                if (isMounted) setEntryImageSrc(null)
+            }
+
+            try {
+                const chartRes = await api.get(`/trades/${encodeURIComponent(tradeId)}/screenshots/chart`, { responseType: 'blob' })
+                if (chartRes.data && chartRes.data.size > 0) {
+                    chartObjectUrl = URL.createObjectURL(chartRes.data)
+                    if (isMounted) setChartImageSrc(chartObjectUrl)
+                } else if (isMounted) {
+                    setChartImageSrc(null)
+                }
+            } catch {
+                if (isMounted) setChartImageSrc(null)
+            }
         }
-    }, [storageKey])
+
+        loadImages()
+
+        return () => {
+            isMounted = false
+            if (entryObjectUrl) URL.revokeObjectURL(entryObjectUrl)
+            if (chartObjectUrl) URL.revokeObjectURL(chartObjectUrl)
+        }
+    }, [tradeId, trade?.updatedAt, trade?.entryScreenshot, trade?.chartScreenshot])
 
     useEffect(() => {
         const el = chartContainerRef.current
@@ -370,18 +386,6 @@ export default function TradeChart() {
         }
     }, [candles, trade])
 
-    const onPickCsv = async (file: File) => {
-        const text = await file.text()
-        const parsed = parseCsvCandles(text)
-        setCandles(parsed)
-        localStorage.setItem(storageKey, JSON.stringify(parsed))
-    }
-
-    const clearCandles = () => {
-        localStorage.removeItem(storageKey)
-        setCandles([])
-    }
-
     const uploadBlobSnapshot = async (blob: Blob, filename: string) => {
         if (!tradeId) return
         const form = new FormData()
@@ -440,8 +444,8 @@ export default function TradeChart() {
         snapshotInputRef.current?.click()
     }
 
-    const chartScreenshotUrl = screenshotUrl('chart', trade?.chartScreenshot)
-    const entryScreenshotUrl = screenshotUrl('entry', trade?.entryScreenshot)
+    const chartScreenshotUrl = chartImageSrc || screenshotUrl('chart', trade?.chartScreenshot)
+    const entryScreenshotUrl = entryImageSrc || screenshotUrl('entry', trade?.entryScreenshot)
 
 
     const useEntryScreenshotAsChart = async () => {
@@ -487,66 +491,28 @@ export default function TradeChart() {
             </div>
 
             <AnimatedCard disableHover>
-                <div className="flex flex-col lg:flex-row lg:items-end gap-3 lg:gap-4">
-                    <div className="flex-1">
-                        <div className="text-sm font-semibold mb-2">Timeframe</div>
-                        <div className="flex flex-wrap gap-2">
-                            {(['1m', '5m', '15m', '1h', '4h'] as Timeframe[]).map(tf => (
-                                <button
-                                    key={tf}
-                                    onClick={() => setTimeframe(tf)}
-                                    className={`px-3 py-2 rounded-lg border transition-colors ${timeframe === tf
-                                        ? 'bg-neutral-900 border-brand text-white'
-                                        : 'bg-neutral-800 border-neutral-700 hover:border-neutral-500 text-neutral-200'
-                                        }`}
-                                >
-                                    {tf.toUpperCase()}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="text-xs text-neutral-500 mt-2">
-                            Upload your OHLC CSV for this timeframe. Supported columns: time/date + open, high, low, close.
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".csv,text/csv"
-                            className="hidden"
-                            onChange={(e) => {
-                                const f = e.target.files?.[0]
-                                if (f) onPickCsv(f)
-                                e.currentTarget.value = ''
-                            }}
-                        />
+                <div className="flex justify-end mb-3">
+                    {entryScreenshotUrl && !candles.length && (
                         <button
-                            onClick={() => fileInputRef.current?.click()}
+                            onClick={useEntryScreenshotAsChart}
                             className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors"
                         >
-                            Upload CSV
+                            Use Entry Screenshot
                         </button>
-                        <button
-                            onClick={clearCandles}
-                            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors"
-                        >
-                            Clear
-                        </button>
-                        {entryScreenshotUrl && !candles.length && (
-                            <button
-                                onClick={useEntryScreenshotAsChart}
-                                className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:border-neutral-500 transition-colors"
-                            >
-                                Use Entry Screenshot
-                            </button>
-                        )}
-                    </div>
+                    )}
                 </div>
 
                 <div className="mt-4 border border-neutral-800 rounded-xl overflow-hidden">
                     {candles.length ? (
                         <div ref={chartContainerRef} className="w-full" />
+                    ) : chartScreenshotUrl ? (
+                        <a href={chartScreenshotUrl} target="_blank" rel="noreferrer" className="block">
+                            <img
+                                src={chartScreenshotUrl}
+                                alt="Chart screenshot"
+                                className="w-full h-[520px] object-contain bg-neutral-900"
+                            />
+                        </a>
                     ) : entryScreenshotUrl ? (
                         <a href={entryScreenshotUrl} target="_blank" rel="noreferrer" className="block">
                             <img
@@ -557,28 +523,14 @@ export default function TradeChart() {
                         </a>
                     ) : (
                         <div className="h-[520px] bg-neutral-900 text-neutral-400 text-sm flex items-center justify-center px-6 text-center">
-                            No chart data yet. Upload OHLC CSV or manual screenshot to preserve the exact setup.
+                            No chart snapshot available yet. Save chart snapshot and it will appear here.
                         </div>
                     )}
                 </div>
 
-                {!candles.length && (
-                    <div className="mt-3 text-sm text-neutral-500">
-                        {entryScreenshotUrl
-                            ? 'Showing your Entry TF screenshot. Upload CSV for real candlesticks + overlays.'
-                            : 'No local candle CSV loaded yet. Upload CSV or screenshot for exact chart context.'}
-                    </div>
-                )}
-
                 {candles.length && (
                     <div className="mt-3 text-sm text-neutral-400">
                         Auto Position Tool active: Entry (yellow), Reward zone (green), Risk zone (red) are drawn from your saved trade values and entry/exit time.
-                    </div>
-                )}
-
-                {!candles.length && (
-                    <div className="mt-2 text-xs text-neutral-500">
-                        Tip: Agar CSV nahi hai, Save chart snapshot dabao aur screenshot file select karke upload karo.
                     </div>
                 )}
             </AnimatedCard>

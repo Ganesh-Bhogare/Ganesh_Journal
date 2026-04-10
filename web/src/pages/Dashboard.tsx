@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme, type AccentTheme } from '../contexts/ThemeContext'
-import { TrendingUp, Target, Award, TrendingDown, Clock, Calendar as CalendarIcon, Layers, Activity, Sparkles, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Target, Award, TrendingDown, Clock, Calendar as CalendarIcon, Layers, Activity, Sparkles, ArrowUpRight, ShieldCheck, AlertTriangle, Trash2 } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
@@ -169,6 +169,27 @@ export default function Dashboard() {
             await persistFundedProfiles(fundedProfiles, nextId)
         } catch (err) {
             console.error('Failed to persist active funded account', err)
+        }
+    }
+
+    const handleDeleteFundedAccount = async (accountId: string) => {
+        const target = normalizeAccountId(accountId)
+        if (!target) return
+
+        const ok = window.confirm(`Delete funded account profile ${target}?`)
+        if (!ok) return
+
+        const nextProfiles = fundedProfiles.filter((item) => item.accountId.toLowerCase() !== target.toLowerCase())
+        const nextActive = selectedFundedAccountId.toLowerCase() === target.toLowerCase() ? 'all' : selectedFundedAccountId
+
+        try {
+            await persistFundedProfiles(nextProfiles, nextActive)
+            setFundedProfiles(nextProfiles)
+            setSelectedFundedAccountId(nextActive)
+            setAccountActionMsg(`Deleted profile ${target}.`)
+        } catch (err) {
+            console.error('Failed to delete funded account profile', err)
+            setAccountActionMsg('Account delete nahi ho paya.')
         }
     }
 
@@ -633,13 +654,21 @@ export default function Dashboard() {
                         <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Saved Profiles</div>
                         <div className="flex flex-wrap gap-2">
                             {fundedProfiles.length > 0 ? fundedProfiles.map((profile) => (
-                                <button
-                                    key={profile.accountId}
-                                    onClick={() => handleSelectFundedAccount(profile.accountId)}
-                                    className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${selectedFundedAccountId === profile.accountId ? 'border-cyan-400/70 text-cyan-200 bg-cyan-500/10' : 'border-blue-700/60 text-slate-200 hover:bg-blue-900/35'}`}
-                                >
-                                    {profile.label || profile.accountId}
-                                </button>
+                                <div key={profile.accountId} className="inline-flex items-center gap-1">
+                                    <button
+                                        onClick={() => handleSelectFundedAccount(profile.accountId)}
+                                        className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${selectedFundedAccountId === profile.accountId ? 'border-cyan-400/70 text-cyan-200 bg-cyan-500/10' : 'border-blue-700/60 text-slate-200 hover:bg-blue-900/35'}`}
+                                    >
+                                        {profile.label || profile.accountId}
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteFundedAccount(profile.accountId)}
+                                        className="px-2 py-1.5 rounded-lg border border-red-700/60 text-red-300 hover:bg-red-900/30 transition-colors"
+                                        title={`Delete ${profile.accountId}`}
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
                             )) : (
                                 <div className="text-xs text-slate-500">No funded profiles yet.</div>
                             )}
