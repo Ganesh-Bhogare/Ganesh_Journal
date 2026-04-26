@@ -7,6 +7,7 @@ import StatCard from '../components/StatCard'
 import AnimatedCard from '../components/AnimatedCard'
 import GradientButton from '../components/GradientButton'
 import ICTTradeForm from '../components/ICTTradeForm'
+import IndianMomentumPanel from '../components/IndianMomentumPanel'
 import EquityCurve from '../components/charts/EquityCurve'
 import WinLossPie from '../components/charts/WinLossPie'
 import { api } from '../lib/api'
@@ -729,6 +730,8 @@ export default function Dashboard() {
                     )}
                 </div>
             </AnimatedCard>
+
+            <IndianMomentumPanel delay={0.1} limit={8} />
 
             {/* KPI Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

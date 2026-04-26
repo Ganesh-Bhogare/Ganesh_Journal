@@ -18,6 +18,7 @@ import AITradeAnalysis from './pages/AITradeAnalysis'
 import TradeChart from './pages/TradeChart'
 import News from './pages/News'
 import FundedAccount from './pages/FundedAccount'
+import StockScreener from './pages/StockScreener'
 
 export default function App() {
     const { user } = useAuth()
@@ -82,6 +83,7 @@ export default function App() {
                                             <Route path="/risk-calculator" element={<RiskCalculator />} />
                                             <Route path="/calendar" element={<CalendarView />} />
                                             <Route path="/news" element={<News />} />
+                                            <Route path="/stock-screener" element={<StockScreener />} />
                                             <Route path="/funded-account" element={<FundedAccount />} />
                                             <Route path="/settings" element={<Settings />} />
                                         </Routes>

@@ -58,6 +58,22 @@ export const config = {
     newsDefaultLimit: parseInt(process.env.NEWS_DEFAULT_LIMIT || "200", 10),
     newsMaxLimit: parseInt(process.env.NEWS_MAX_LIMIT || "500", 10),
 
+    // Indian stock momentum screener
+    indianScreenerSymbols: (process.env.INDIAN_SCREENER_SYMBOLS || "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean),
+    indianScreenerCacheTtlSeconds: parseInt(process.env.INDIAN_SCREENER_CACHE_TTL_SECONDS || "120", 10),
+    indianScreenerMomentumThreshold: parseFloat(process.env.INDIAN_SCREENER_MOMENTUM_THRESHOLD || "2"),
+    indianScreenerVolumeRatioThreshold: parseFloat(process.env.INDIAN_SCREENER_VOLUME_RATIO_THRESHOLD || "1.5"),
+    indianScreenerLookbackMinutes: parseInt(process.env.INDIAN_SCREENER_LOOKBACK_MINUTES || "15", 10),
+    indianScreenerBaselineBars: parseInt(process.env.INDIAN_SCREENER_BASELINE_BARS || "24", 10),
+    indianScreenerStrictDefault: /^(1|true|yes)$/i.test(process.env.INDIAN_SCREENER_STRICT_DEFAULT || ""),
+    indianScreenerRvolThreshold: parseFloat(process.env.INDIAN_SCREENER_RVOL_THRESHOLD || "2"),
+    indianScreenerRsiBullishThreshold: parseFloat(process.env.INDIAN_SCREENER_RSI_BULLISH_THRESHOLD || "60"),
+    indianScreenerRsiBearishThreshold: parseFloat(process.env.INDIAN_SCREENER_RSI_BEARISH_THRESHOLD || "40"),
+    indianScreenerGapThresholdPercent: parseFloat(process.env.INDIAN_SCREENER_GAP_THRESHOLD_PERCENT || "2"),
+
     // Funded read-only terminal bridge
     fundedBridgeToken: process.env.FUNDED_BRIDGE_TOKEN || "",
 };

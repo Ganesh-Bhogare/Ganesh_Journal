@@ -13,6 +13,7 @@ import riskRoutes from "./routes/risk";
 import newsRoutes from "./routes/news";
 import calendarRoutes from "./routes/calendar";
 import fundedRoutes from "./routes/funded";
+import marketRoutes from "./routes/market";
 import { errorHandler } from "./middleware/errorHandler";
 
 // Create and configure Express app
@@ -59,6 +60,7 @@ export function createApp() {
     app.use("/api/news", newsRoutes);
     app.use("/api/calendar", calendarRoutes);
     app.use("/api/funded", fundedRoutes);
+    app.use("/api/market", marketRoutes);
 
     // Production: serve the frontend (Vite build) from this server.
     // This enables a single Render Web Service deployment.
