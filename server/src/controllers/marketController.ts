@@ -74,10 +74,22 @@ type MomentumPayload = {
     universeCount: number;
     bullish: MomentumStock[];
     bearish: MomentumStock[];
+    nearMissBullish: MomentumStock[];
+    nearMissBearish: MomentumStock[];
+    ranked: RankedMomentumStock[];
     neutralCount: number;
     marketState: string;
     signalSource: "live" | "previous-session";
     rules: MomentumRules;
+};
+
+type RankedMomentumStock = MomentumStock & {
+    direction: "bullish" | "bearish";
+    criteriaPassed: number;
+    criteriaTotal: number;
+    missingCriteria: string[];
+    tier: "full" | "one-miss" | "two-plus-miss";
+    fulfillmentPercent: number;
 };
 
 const DEFAULT_INDIAN_SYMBOLS = [
@@ -318,21 +330,34 @@ async function fetchYahooIntradayStats(symbol: string, lookbackBars: number, bas
     const minBars = lookbackBars + 2;
     if (bars.length < minBars) return null;
 
+    const lookbackMs = lookbackBars * INTRADAY_INTERVAL_MINUTES * 60 * 1000;
     const lastIndex = bars.length - 1;
     const current = bars[lastIndex];
-    const previous = bars[lastIndex - lookbackBars];
+    const currentWindowStartTs = current.tsMs - lookbackMs;
+
+    let previousIdx = lastIndex - 1;
+    while (previousIdx >= 0 && bars[previousIdx].tsMs > currentWindowStartTs) {
+        previousIdx -= 1;
+    }
+
+    if (previousIdx < 0) return null;
+    const previous = bars[previousIdx];
     if (!previous || previous.close <= 0) return null;
 
-    const priorBars = bars.slice(0, lastIndex);
-    if (priorBars.length === 0) return null;
+    const currentWindow = bars.filter((b) => b.tsMs > previous.tsMs && b.tsMs <= current.tsMs);
+    if (currentWindow.length === 0) return null;
 
-    const previousHigh = Math.max(...priorBars.map((b) => b.high));
-    const previousLow = Math.min(...priorBars.map((b) => b.low));
+    const effectiveWindowMs = current.tsMs - previous.tsMs;
+    const previousWindowStartTs = previous.tsMs - effectiveWindowMs;
+    const previousWindowBars = bars.filter((b) => b.tsMs > previousWindowStartTs && b.tsMs <= previous.tsMs);
+    if (previousWindowBars.length === 0) return null;
 
-    const currentWindow = bars.slice(Math.max(0, bars.length - lookbackBars));
+    const previousHigh = Math.max(...previousWindowBars.map((b) => b.high));
+    const previousLow = Math.min(...previousWindowBars.map((b) => b.low));
+
     const currentVolume = currentWindow.reduce((sum, b) => sum + b.volume, 0);
 
-    const baselineEnd = Math.max(0, bars.length - lookbackBars);
+    const baselineEnd = Math.max(0, previousIdx + 1);
     const baselineStart = Math.max(0, baselineEnd - baselineBars);
     const baselineWindow = bars.slice(baselineStart, baselineEnd);
     const baselineAvgPerBar = baselineWindow.length > 0
@@ -420,7 +445,8 @@ function computeSignalStock(
     stats: IntradayStats,
     rules: MomentumRules
 ): MomentumStock {
-    const marketPrice = toFiniteNumber(quote?.regularMarketPrice) ?? stats.currentPrice;
+    const signalPrice = stats.currentPrice;
+    const marketPrice = toFiniteNumber(quote?.regularMarketPrice) ?? signalPrice;
     const name = toDisplayName(symbol, quote || {});
     const liveMomentumThreshold = rules.relaxedMode ? Math.min(rules.momentumPercent, 1) : rules.momentumPercent;
     const liveVolumeThreshold = rules.relaxedMode ? Math.min(rules.volumeRatio, 1.2) : rules.volumeRatio;
@@ -428,14 +454,14 @@ function computeSignalStock(
     const bullish =
         stats.priceChangePercent >= liveMomentumThreshold &&
         stats.volumeRatio >= liveVolumeThreshold &&
-        marketPrice > stats.previousHigh &&
+        signalPrice > stats.previousHigh &&
         (
             !rules.strictMode || (
                 stats.volumeRatio >= rules.rvolThreshold &&
                 stats.rsi14 != null &&
                 stats.rsi14 >= rules.rsiBullishThreshold &&
                 stats.vwap != null &&
-                marketPrice > stats.vwap &&
+                signalPrice > stats.vwap &&
                 stats.gapPercent != null &&
                 stats.gapPercent >= rules.gapPercentThreshold
             )
@@ -444,14 +470,14 @@ function computeSignalStock(
     const bearish =
         stats.priceChangePercent <= -liveMomentumThreshold &&
         stats.volumeRatio >= liveVolumeThreshold &&
-        marketPrice < stats.previousLow &&
+        signalPrice < stats.previousLow &&
         (
             !rules.strictMode || (
                 stats.volumeRatio >= rules.rvolThreshold &&
                 stats.rsi14 != null &&
                 stats.rsi14 <= rules.rsiBearishThreshold &&
                 stats.vwap != null &&
-                marketPrice < stats.vwap &&
+                signalPrice < stats.vwap &&
                 stats.gapPercent != null &&
                 stats.gapPercent <= -rules.gapPercentThreshold
             )
@@ -463,7 +489,7 @@ function computeSignalStock(
     const reasons: string[] = [];
 
     if (bullish) {
-        const breakoutEdge = ((marketPrice - stats.previousHigh) / Math.max(stats.previousHigh, 0.01)) * 100;
+        const breakoutEdge = ((signalPrice - stats.previousHigh) / Math.max(stats.previousHigh, 0.01)) * 100;
         momentumScore =
             (stats.priceChangePercent / liveMomentumThreshold) +
             (stats.volumeRatio / liveVolumeThreshold) +
@@ -478,7 +504,7 @@ function computeSignalStock(
 
         reasons.push(`Momentum +${stats.priceChangePercent.toFixed(2)}% in ${rules.lookbackMinutes}m`);
         reasons.push(`Volume ${stats.volumeRatio.toFixed(2)}x vs avg`);
-        reasons.push(`Breakout above ${stats.previousHigh.toFixed(2)}`);
+        reasons.push(`Breakout above previous ${rules.lookbackMinutes}m high (${stats.previousHigh.toFixed(2)})`);
         if (rules.relaxedMode) {
             reasons.push("Relaxed thresholds enabled");
         }
@@ -488,7 +514,7 @@ function computeSignalStock(
             reasons.push(`Gap up ${Number(stats.gapPercent).toFixed(2)}%`);
         }
     } else if (bearish) {
-        const breakdownEdge = ((stats.previousLow - marketPrice) / Math.max(stats.previousLow, 0.01)) * 100;
+        const breakdownEdge = ((stats.previousLow - signalPrice) / Math.max(stats.previousLow, 0.01)) * 100;
         momentumScore = -(
             (Math.abs(stats.priceChangePercent) / liveMomentumThreshold) +
             (stats.volumeRatio / liveVolumeThreshold) +
@@ -504,7 +530,7 @@ function computeSignalStock(
 
         reasons.push(`Momentum ${stats.priceChangePercent.toFixed(2)}% in ${rules.lookbackMinutes}m`);
         reasons.push(`Volume ${stats.volumeRatio.toFixed(2)}x vs avg`);
-        reasons.push(`Breakdown below ${stats.previousLow.toFixed(2)}`);
+        reasons.push(`Breakdown below previous ${rules.lookbackMinutes}m low (${stats.previousLow.toFixed(2)})`);
         if (rules.relaxedMode) {
             reasons.push("Relaxed thresholds enabled");
         }
@@ -593,6 +619,217 @@ function buildClosedSessionFallback(items: MomentumStock[], rules: MomentumRules
     return { bullish, bearish };
 }
 
+function buildNearMissWatchlist(items: MomentumStock[], rules: MomentumRules, limit: number) {
+    const thresholdMomentum = rules.relaxedMode ? Math.min(rules.momentumPercent, 1) : rules.momentumPercent;
+    const thresholdVolume = rules.relaxedMode ? Math.min(rules.volumeRatio, 1.2) : rules.volumeRatio;
+    const breakoutBufferPercent = rules.relaxedMode ? 0.6 : 0.35;
+
+    const bullish = items
+        .filter((item) => item.signal === "neutral")
+        .map((item) => {
+            const momentumDeficit = Math.max(0, thresholdMomentum - item.changePercent);
+            const volumeDeficit = Math.max(0, thresholdVolume - item.volumeRatio);
+            const breakoutDeficit = Math.max(
+                0,
+                ((item.previousHigh - item.price) / Math.max(item.previousHigh, 0.01)) * 100
+            );
+
+            const passCount =
+                (item.changePercent >= thresholdMomentum ? 1 : 0) +
+                (item.volumeRatio >= thresholdVolume ? 1 : 0) +
+                (item.price > item.previousHigh ? 1 : 0);
+
+            const isNear =
+                passCount >= 2 ||
+                (
+                    momentumDeficit <= thresholdMomentum * 0.45 &&
+                    volumeDeficit <= thresholdVolume * 0.45 &&
+                    breakoutDeficit <= breakoutBufferPercent
+                );
+
+            if (!isNear) return null;
+
+            const score = 100 - (
+                (momentumDeficit / Math.max(thresholdMomentum, 0.01)) * 45 +
+                (volumeDeficit / Math.max(thresholdVolume, 0.01)) * 30 +
+                (breakoutDeficit / Math.max(breakoutBufferPercent, 0.01)) * 25
+            );
+
+            const reasons = [
+                `Near-miss bullish: ${Math.max(0, score).toFixed(1)}% ready`,
+                momentumDeficit > 0
+                    ? `Need +${momentumDeficit.toFixed(2)}% momentum`
+                    : "Momentum threshold passed",
+                volumeDeficit > 0
+                    ? `Need ${volumeDeficit.toFixed(2)}x more volume ratio`
+                    : "Volume threshold passed",
+                breakoutDeficit > 0
+                    ? `~${breakoutDeficit.toFixed(2)}% below breakout`
+                    : "Breakout level crossed",
+            ];
+
+            return {
+                ...item,
+                momentumScore: round2(score / 10),
+                reasons,
+            } as MomentumStock;
+        })
+        .filter((item): item is MomentumStock => !!item)
+        .sort((a, b) => b.momentumScore - a.momentumScore)
+        .slice(0, limit);
+
+    const bearish = items
+        .filter((item) => item.signal === "neutral")
+        .map((item) => {
+            const momentumDeficit = Math.max(0, thresholdMomentum - Math.abs(item.changePercent));
+            const volumeDeficit = Math.max(0, thresholdVolume - item.volumeRatio);
+            const breakoutDeficit = Math.max(
+                0,
+                ((item.price - item.previousLow) / Math.max(item.previousLow, 0.01)) * 100
+            );
+
+            const passCount =
+                (item.changePercent <= -thresholdMomentum ? 1 : 0) +
+                (item.volumeRatio >= thresholdVolume ? 1 : 0) +
+                (item.price < item.previousLow ? 1 : 0);
+
+            const isNear =
+                passCount >= 2 ||
+                (
+                    momentumDeficit <= thresholdMomentum * 0.45 &&
+                    volumeDeficit <= thresholdVolume * 0.45 &&
+                    breakoutDeficit <= breakoutBufferPercent
+                );
+
+            if (!isNear) return null;
+
+            const score = 100 - (
+                (momentumDeficit / Math.max(thresholdMomentum, 0.01)) * 45 +
+                (volumeDeficit / Math.max(thresholdVolume, 0.01)) * 30 +
+                (breakoutDeficit / Math.max(breakoutBufferPercent, 0.01)) * 25
+            );
+
+            const reasons = [
+                `Near-miss bearish: ${Math.max(0, score).toFixed(1)}% ready`,
+                momentumDeficit > 0
+                    ? `Need -${momentumDeficit.toFixed(2)}% more momentum`
+                    : "Momentum threshold passed",
+                volumeDeficit > 0
+                    ? `Need ${volumeDeficit.toFixed(2)}x more volume ratio`
+                    : "Volume threshold passed",
+                breakoutDeficit > 0
+                    ? `~${breakoutDeficit.toFixed(2)}% above breakdown`
+                    : "Breakdown level crossed",
+            ];
+
+            return {
+                ...item,
+                momentumScore: round2(-(score / 10)),
+                reasons,
+            } as MomentumStock;
+        })
+        .filter((item): item is MomentumStock => !!item)
+        .sort((a, b) => a.momentumScore - b.momentumScore)
+        .slice(0, limit);
+
+    return { bullish, bearish };
+}
+
+function evaluateCriteria(
+    item: MomentumStock,
+    rules: MomentumRules,
+    direction: "bullish" | "bearish"
+) {
+    const thresholdMomentum = rules.relaxedMode ? Math.min(rules.momentumPercent, 1) : rules.momentumPercent;
+    const thresholdVolume = rules.relaxedMode ? Math.min(rules.volumeRatio, 1.2) : rules.volumeRatio;
+
+    const checks = direction === "bullish"
+        ? [
+            { label: `Momentum >= ${thresholdMomentum}%`, pass: item.changePercent >= thresholdMomentum },
+            { label: `Volume >= ${thresholdVolume}x`, pass: item.volumeRatio >= thresholdVolume },
+            { label: "Breakout > previous high", pass: item.price > item.previousHigh },
+        ]
+        : [
+            { label: `Momentum <= -${thresholdMomentum}%`, pass: item.changePercent <= -thresholdMomentum },
+            { label: `Volume >= ${thresholdVolume}x`, pass: item.volumeRatio >= thresholdVolume },
+            { label: "Breakdown < previous low", pass: item.price < item.previousLow },
+        ];
+
+    if (rules.strictMode) {
+        if (direction === "bullish") {
+            checks.push(
+                { label: `RVOL >= ${rules.rvolThreshold}x`, pass: item.volumeRatio >= rules.rvolThreshold },
+                { label: `RSI >= ${rules.rsiBullishThreshold}`, pass: item.rsi14 != null && item.rsi14 >= rules.rsiBullishThreshold },
+                { label: "Price > VWAP", pass: item.vwap != null && item.price > item.vwap },
+                { label: `Gap >= ${rules.gapPercentThreshold}%`, pass: item.gapPercent != null && item.gapPercent >= rules.gapPercentThreshold },
+            );
+        } else {
+            checks.push(
+                { label: `RVOL >= ${rules.rvolThreshold}x`, pass: item.volumeRatio >= rules.rvolThreshold },
+                { label: `RSI <= ${rules.rsiBearishThreshold}`, pass: item.rsi14 != null && item.rsi14 <= rules.rsiBearishThreshold },
+                { label: "Price < VWAP", pass: item.vwap != null && item.price < item.vwap },
+                { label: `Gap <= -${rules.gapPercentThreshold}%`, pass: item.gapPercent != null && item.gapPercent <= -rules.gapPercentThreshold },
+            );
+        }
+    }
+
+    const criteriaPassed = checks.filter((c) => c.pass).length;
+    const criteriaTotal = checks.length;
+    const missingCriteria = checks.filter((c) => !c.pass).map((c) => c.label);
+
+    return {
+        criteriaPassed,
+        criteriaTotal,
+        missingCriteria,
+    };
+}
+
+function buildRankedMomentum(items: MomentumStock[], rules: MomentumRules) {
+    const ranked = items.map((item) => {
+        const bullishEval = evaluateCriteria(item, rules, "bullish");
+        const bearishEval = evaluateCriteria(item, rules, "bearish");
+
+        let direction: "bullish" | "bearish" = item.changePercent >= 0 ? "bullish" : "bearish";
+        let selected = direction === "bullish" ? bullishEval : bearishEval;
+
+        if (bullishEval.criteriaPassed > bearishEval.criteriaPassed) {
+            direction = "bullish";
+            selected = bullishEval;
+        } else if (bearishEval.criteriaPassed > bullishEval.criteriaPassed) {
+            direction = "bearish";
+            selected = bearishEval;
+        }
+
+        const missingCount = selected.criteriaTotal - selected.criteriaPassed;
+        const tier: RankedMomentumStock["tier"] = missingCount === 0
+            ? "full"
+            : missingCount === 1
+                ? "one-miss"
+                : "two-plus-miss";
+
+        return {
+            ...item,
+            direction,
+            criteriaPassed: selected.criteriaPassed,
+            criteriaTotal: selected.criteriaTotal,
+            missingCriteria: selected.missingCriteria,
+            tier,
+            fulfillmentPercent: round2((selected.criteriaPassed / Math.max(selected.criteriaTotal, 1)) * 100),
+        } as RankedMomentumStock;
+    });
+
+    ranked.sort((a, b) => {
+        if (b.criteriaPassed !== a.criteriaPassed) return b.criteriaPassed - a.criteriaPassed;
+        if (Math.abs(b.changePercent) !== Math.abs(a.changePercent)) {
+            return Math.abs(b.changePercent) - Math.abs(a.changePercent);
+        }
+        if (b.volumeRatio !== a.volumeRatio) return b.volumeRatio - a.volumeRatio;
+        return b.momentumScore - a.momentumScore;
+    });
+
+    return ranked;
+}
+
 export async function getIndianMomentum(req: Request & { userId?: string }, res: Response) {
     try {
         const q = GetIndianMomentumQuery.parse(req.query);
@@ -635,6 +872,8 @@ export async function getIndianMomentum(req: Request & { userId?: string }, res:
                 ...cached.payload,
                 bullish: cached.payload.bullish.slice(0, limit),
                 bearish: cached.payload.bearish.slice(0, limit),
+                nearMissBullish: cached.payload.nearMissBullish.slice(0, limit),
+                nearMissBearish: cached.payload.nearMissBearish.slice(0, limit),
             });
         }
 
@@ -700,6 +939,9 @@ export async function getIndianMomentum(req: Request & { userId?: string }, res:
             signalSource = "previous-session";
         }
 
+        const nearMiss = buildNearMissWatchlist(classified, rules, limit);
+        const ranked = buildRankedMomentum(classified, rules);
+
         if (classified.length === 0) {
             return res.status(502).json({
                 ok: false,
@@ -713,6 +955,9 @@ export async function getIndianMomentum(req: Request & { userId?: string }, res:
             universeCount: classified.length,
             bullish: finalBullish,
             bearish: finalBearish,
+            nearMissBullish: nearMiss.bullish,
+            nearMissBearish: nearMiss.bearish,
+            ranked,
             neutralCount,
             marketState,
             signalSource,
@@ -725,6 +970,8 @@ export async function getIndianMomentum(req: Request & { userId?: string }, res:
             ...payload,
             bullish: payload.bullish.slice(0, limit),
             bearish: payload.bearish.slice(0, limit),
+            nearMissBullish: payload.nearMissBullish.slice(0, limit),
+            nearMissBearish: payload.nearMissBearish.slice(0, limit),
         });
     } catch (err: any) {
         return res.status(502).json({
