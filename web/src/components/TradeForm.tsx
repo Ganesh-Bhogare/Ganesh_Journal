@@ -36,20 +36,26 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
     const [formData, setFormData] = useState({
         date: trade?.date ? isoToIstInputValue(trade.date) : nowIstInputValue(),
         instrument: trade?.instrument || 'EURUSD',
+        direction: trade?.direction || 'long',
+        entryPrice: trade?.entryPrice || '',
         takeProfit: trade?.takeProfit || '',
         mistake: trade?.mistake || '',
         improvement: trade?.improvement || ''
     })
     const [files, setFiles] = useState<FileList | null>(null)
     const [loading, setLoading] = useState(false)
+    const [errorMsg, setErrorMsg] = useState('')
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
+        setErrorMsg('')
         try {
             const tradeData = {
                 date: istInputToIso(formData.date) || new Date().toISOString(),
                 instrument: formData.instrument,
+                direction: formData.direction,
+                entryPrice: parseFloat(formData.entryPrice as string),
                 takeProfit: formData.takeProfit ? parseFloat(formData.takeProfit as string) : undefined,
                 mistake: formData.mistake,
                 improvement: formData.improvement
@@ -75,6 +81,8 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
             onClose()
         } catch (err) {
             console.error('Failed to save trade:', err)
+            const message = (err as any)?.response?.data?.error
+            setErrorMsg(Array.isArray(message) ? 'Validation failed. Please check required fields.' : (message || 'Failed to save trade.'))
         } finally {
             setLoading(false)
         }
@@ -158,7 +166,7 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                     flex: 1
                 }}>
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
                             <div>
                                 <label style={labelStyle}>Date & Time</label>
                                 <input
@@ -182,6 +190,29 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                                 </select>
                             </div>
                             <div>
+                                <label style={labelStyle}>Direction</label>
+                                <select
+                                    value={formData.direction}
+                                    onChange={(e) => setFormData({ ...formData, direction: e.target.value })}
+                                    style={inputStyle}
+                                >
+                                    <option value="long">Long</option>
+                                    <option value="short">Short</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Entry Price</label>
+                                <input
+                                    type="number"
+                                    step="0.00001"
+                                    min="0"
+                                    value={formData.entryPrice}
+                                    onChange={(e) => setFormData({ ...formData, entryPrice: e.target.value })}
+                                    style={inputStyle}
+                                    required
+                                />
+                            </div>
+                            <div>
                                 <label style={labelStyle}>Take Profit</label>
                                 <input
                                     type="number"
@@ -192,6 +223,18 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                                 />
                             </div>
                         </div>
+                        {errorMsg && (
+                            <div style={{
+                                padding: '12px 14px',
+                                backgroundColor: '#3f1d1d',
+                                border: '1px solid #7f1d1d',
+                                color: '#fecaca',
+                                borderRadius: '8px',
+                                fontSize: '14px'
+                            }}>
+                                {errorMsg}
+                            </div>
+                        )}
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '20px' }}>
                             <div>
