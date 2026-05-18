@@ -31,6 +31,10 @@ function safeNumber(v: any) {
     return Number.isFinite(n) ? n : 0;
 }
 
+function tradePnl(t: any) {
+    return safeNumber(t?.pnl ?? t?.takeProfit);
+}
+
 function rate(count: number, total: number) {
     if (!total) return 0;
     return count / total;
@@ -54,7 +58,7 @@ function bucketize(trades: any[], getKey: (t: any) => string | undefined, labelF
             };
         }
 
-        const pnl = safeNumber(t.pnl);
+        const pnl = tradePnl(t);
         map[key].trades += 1;
         map[key].netPnl += pnl;
 
@@ -80,7 +84,7 @@ function computeWinRateAfterLossStreak(tradesAsc: any[], streakLen: number) {
     const after: any[] = [];
 
     for (const t of tradesAsc) {
-        const pnl = safeNumber(t.pnl);
+        const pnl = tradePnl(t);
         const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
 
         if (streak >= streakLen) {
@@ -93,7 +97,7 @@ function computeWinRateAfterLossStreak(tradesAsc: any[], streakLen: number) {
 
     const total = after.length;
     const wins = after.reduce((sum, t) => {
-        const pnl = safeNumber(t.pnl);
+        const pnl = tradePnl(t);
         const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
         return sum + (outcome === "win" ? 1 : 0);
     }, 0);
@@ -136,7 +140,7 @@ export async function kpis(req: Request & { userId?: string }, res: Response) {
         let maxDrawdown = 0;
 
         for (const t of trades) {
-            const pnl = (t.pnl ?? 0);
+            const pnl = (t.pnl ?? t.takeProfit ?? 0);
             equity += pnl;
             peak = Math.max(peak, equity);
             const drawdown = peak > 0 ? (peak - equity) : 0;
@@ -189,7 +193,7 @@ export async function distributions(req: Request & { userId?: string }, res: Res
         }
 
         const trades = await Trade.find(filters).select(
-            "instrument direction outcome pnl session"
+            "instrument direction outcome pnl takeProfit session"
         );
 
         const countArray = (arr: Array<string | undefined | null>) => {
@@ -205,7 +209,7 @@ export async function distributions(req: Request & { userId?: string }, res: Res
 
         const derivedOutcome = trades.map((t: any) => {
             if (t.outcome) return t.outcome as string;
-            const pnl = t.pnl ?? 0;
+            const pnl = tradePnl(t);
             if (pnl > 0) return "win";
             if (pnl < 0) return "loss";
             return "breakeven";
@@ -215,7 +219,7 @@ export async function distributions(req: Request & { userId?: string }, res: Res
         for (const t of trades as any[]) {
             const instrument = t.instrument as string | undefined;
             if (!instrument) continue;
-            const pnl = typeof t.pnl === "number" && Number.isFinite(t.pnl) ? t.pnl : 0;
+            const pnl = tradePnl(t);
             if (!pairMap[instrument]) pairMap[instrument] = { profit: 0, lossAbs: 0, net: 0 };
             pairMap[instrument].net += pnl;
             if (pnl >= 0) pairMap[instrument].profit += pnl;
@@ -304,7 +308,7 @@ export async function aiInsights(req: Request & { userId?: string }, res: Respon
         const earliestDate = trades[total - 1]?.date ? new Date(trades[total - 1].date) : null;
 
         for (const t of trades as any[]) {
-            const pnl = safeNumber(t.pnl);
+            const pnl = safeNumber(t.pnl ?? t.takeProfit);
             netPnl += pnl;
             if (pnl > 0) {
                 wins++;
@@ -511,7 +515,7 @@ export async function autoTradeAnalysis(req: Request & { userId?: string }, res:
         const trades = await Trade.find(filter)
             .sort({ date: 1 })
             .limit(limit)
-            .select("date instrument session setupType outcome pnl");
+            .select("date instrument session setupType outcome pnl takeProfit");
 
         if (trades.length === 0) {
             return res.json({
@@ -530,7 +534,7 @@ export async function autoTradeAnalysis(req: Request & { userId?: string }, res:
         // Pattern: win rate after 3 consecutive losses
         const total = trades.length;
         const overallWins = (trades as any[]).reduce((sum, t) => {
-            const pnl = safeNumber(t.pnl);
+            const pnl = tradePnl(t);
             const outcome = t.outcome ? String(t.outcome) : (pnl > 0 ? "win" : pnl < 0 ? "loss" : "breakeven");
             return sum + (outcome === "win" ? 1 : 0);
         }, 0);

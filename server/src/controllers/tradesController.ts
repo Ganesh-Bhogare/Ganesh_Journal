@@ -277,7 +277,17 @@ export async function importTrades(req: Request & { userId?: string }, res: Resp
 export async function createTrade(req: Request & { userId?: string }, res: Response) {
     try {
         const parsed = tradeSchema.parse(req.body);
-        const calculatedData = calculateTradeMetrics(parsed);
+        const normalized = { ...parsed } as any;
+        if (
+            normalized.pnl === undefined &&
+            normalized.takeProfit !== undefined &&
+            normalized.entryPrice === undefined &&
+            normalized.exitPrice === undefined
+        ) {
+            normalized.pnl = normalized.takeProfit;
+        }
+
+        const calculatedData = calculateTradeMetrics(normalized);
 
         const risk = await applyRiskEngine(req.userId, { ...calculatedData, date: parsed.date, instrument: parsed.instrument });
         if (!risk.allowed) {
@@ -315,7 +325,15 @@ export async function updateTrade(req: Request & { userId?: string }, res: Respo
         const existing = await Trade.findOne({ _id: id, userId: req.userId });
         if (!existing) return res.status(404).json({ error: "Trade not found" });
 
-        const mergedData = { ...existing.toObject(), ...parsed };
+        const mergedData = { ...existing.toObject(), ...parsed } as any;
+        if (
+            mergedData.pnl === undefined &&
+            mergedData.takeProfit !== undefined &&
+            mergedData.entryPrice === undefined &&
+            mergedData.exitPrice === undefined
+        ) {
+            mergedData.pnl = mergedData.takeProfit;
+        }
         const calculatedData = calculateTradeMetrics(mergedData);
 
         const risk = await applyRiskEngine(req.userId, calculatedData);

@@ -82,6 +82,13 @@ export default function Trades() {
         const direction = String(trade?.direction || '').toLowerCase()
         const canDerive = Number.isFinite(entry) && Number.isFinite(lot) && lot > 0 && (direction === 'long' || direction === 'short')
 
+        if (typeof trade?.pnl !== 'number' || !Number.isFinite(trade.pnl)) {
+            const tpFallback = Number(trade?.takeProfit)
+            if (Number.isFinite(tpFallback) && !Number.isFinite(Number(trade?.exitPrice)) && !Number.isFinite(entry)) {
+                return { value: tpFallback, projected: false }
+            }
+        }
+
         // Funded provider values are broker-calculated; keep broker P&L for accuracy.
         if (trade?.source === 'funded-readonly' && typeof trade?.pnl === 'number' && Number.isFinite(trade.pnl)) {
             return { value: trade.pnl as number, projected: false }
@@ -830,9 +837,13 @@ export default function Trades() {
                                                         <span className="flex items-center gap-1 text-green-500">
                                                             <TrendingUp size={16} /> LONG
                                                         </span>
-                                                    ) : (
+                                                    ) : trade.direction === 'short' ? (
                                                         <span className="flex items-center gap-1 text-red-500">
                                                             <TrendingDown size={16} /> SHORT
+                                                        </span>
+                                                    ) : (
+                                                        <span className="flex items-center gap-1 text-neutral-400">
+                                                            N/A
                                                         </span>
                                                     )}
                                                 </td>
@@ -986,10 +997,18 @@ export default function Trades() {
                             </div>
                         </div>
 
-                        <div className="mb-6">
-                            <div className="text-sm font-semibold mb-2">Notes</div>
-                            <div className="whitespace-pre-wrap text-neutral-200 bg-neutral-800/30 border border-neutral-800 rounded-lg p-4">
-                                {viewingTrade.notes?.trim() ? viewingTrade.notes : 'No notes'}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div className="p-4 bg-neutral-800/30 border border-neutral-800 rounded-lg">
+                                <div className="text-sm font-semibold mb-2">Mistake</div>
+                                <div className="whitespace-pre-wrap text-neutral-200">
+                                    {viewingTrade.mistake?.trim() ? viewingTrade.mistake : 'No mistake noted'}
+                                </div>
+                            </div>
+                            <div className="p-4 bg-neutral-800/30 border border-neutral-800 rounded-lg">
+                                <div className="text-sm font-semibold mb-2">Improvement</div>
+                                <div className="whitespace-pre-wrap text-neutral-200">
+                                    {viewingTrade.improvement?.trim() ? viewingTrade.improvement : 'No improvement noted'}
+                                </div>
                             </div>
                         </div>
 

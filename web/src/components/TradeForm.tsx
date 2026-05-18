@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useState } from 'react'
-import { X, Upload, TrendingUp, TrendingDown } from 'lucide-react'
+import { X, Upload } from 'lucide-react'
 import GradientButton from './GradientButton'
 import { api } from '../lib/api'
 import { isoToIstInputValue, istInputToIso, nowIstInputValue } from '../lib/istDate'
@@ -12,16 +12,6 @@ interface TradeFormProps {
 }
 
 const FOREX_PAIRS = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'EURJPY', 'GBPJPY', 'EURGBP']
-const SESSIONS = ['Asian', 'London', 'New York', 'Sydney']
-const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1']
-const STRATEGIES = ['Breakout', 'Trend Following', 'Reversal', 'Scalping', 'Range Trading', 'News Trading']
-const MOODS = [
-    { emoji: '😊', label: 'Confident' },
-    { emoji: '😐', label: 'Neutral' },
-    { emoji: '😰', label: 'Anxious' },
-    { emoji: '😤', label: 'Frustrated' },
-    { emoji: '🤔', label: 'Uncertain' }
-]
 
 const inputStyle = {
     width: '100%',
@@ -46,18 +36,9 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
     const [formData, setFormData] = useState({
         date: trade?.date ? isoToIstInputValue(trade.date) : nowIstInputValue(),
         instrument: trade?.instrument || 'EURUSD',
-        direction: trade?.direction || 'long',
-        entryPrice: trade?.entryPrice || '',
-        exitPrice: trade?.exitPrice || '',
-        stopLoss: trade?.stopLoss || '',
         takeProfit: trade?.takeProfit || '',
-        lotSize: trade?.lotSize || '',
-        notes: trade?.notes || '',
-        tags: trade?.tags || [],
-        timeframe: trade?.timeframe || 'H1',
-        session: trade?.session || 'London',
-        mood: '',
-        rating: 0
+        mistake: trade?.mistake || '',
+        improvement: trade?.improvement || ''
     })
     const [files, setFiles] = useState<FileList | null>(null)
     const [loading, setLoading] = useState(false)
@@ -67,25 +48,27 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
         setLoading(true)
         try {
             const tradeData = {
-                ...formData,
                 date: istInputToIso(formData.date) || new Date().toISOString(),
-                entryPrice: parseFloat(formData.entryPrice as string),
-                exitPrice: formData.exitPrice ? parseFloat(formData.exitPrice as string) : undefined,
-                stopLoss: formData.stopLoss ? parseFloat(formData.stopLoss as string) : undefined,
+                instrument: formData.instrument,
                 takeProfit: formData.takeProfit ? parseFloat(formData.takeProfit as string) : undefined,
-                lotSize: formData.lotSize ? parseFloat(formData.lotSize as string) : undefined,
+                mistake: formData.mistake,
+                improvement: formData.improvement
             }
 
-            if (trade) {
-                await api.patch(`/trades/${trade._id}`, tradeData)
-            } else {
-                await api.post('/trades', tradeData)
-            }
+            const response = trade
+                ? await api.patch(`/trades/${trade._id}`, tradeData)
+                : await api.post('/trades', tradeData)
 
-            if (files && files.length > 0) {
+            const tradeId = trade?._id || response?.data?._id
+
+            if (tradeId && files && files.length > 0) {
                 const formDataFiles = new FormData()
-                Array.from(files).forEach(file => formDataFiles.append('screenshots', file))
-                await api.post('/trades/upload', formDataFiles)
+                const fileList = Array.from(files)
+                if (fileList[0]) formDataFiles.append('chart', fileList[0])
+                if (fileList[1]) formDataFiles.append('entry', fileList[1])
+                await api.post(`/trades/${tradeId}/screenshots`, formDataFiles, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                })
             }
 
             onSuccess()
@@ -133,7 +116,6 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -170,15 +152,13 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                     </button>
                 </div>
 
-                {/* Form Content */}
                 <div style={{
                     padding: '24px',
                     overflowY: 'auto',
                     flex: 1
                 }}>
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                        {/* Row 1: Basic Info */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
                             <div>
                                 <label style={labelStyle}>Date & Time</label>
                                 <input
@@ -196,94 +176,10 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                                     onChange={(e) => setFormData({ ...formData, instrument: e.target.value })}
                                     style={inputStyle}
                                 >
-                                    {FOREX_PAIRS.map(pair => <option key={pair} value={pair}>{pair}</option>)}
+                                    {FOREX_PAIRS.map((pair) => (
+                                        <option key={pair} value={pair}>{pair}</option>
+                                    ))}
                                 </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Direction</label>
-                                <div style={{ display: 'flex', gap: '12px' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, direction: 'long' })}
-                                        style={{
-                                            flex: 1,
-                                            padding: '10px 16px',
-                                            borderRadius: '8px',
-                                            border: formData.direction === 'long' ? '2px solid #22c55e' : '1px solid #404040',
-                                            backgroundColor: formData.direction === 'long' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                                            color: formData.direction === 'long' ? '#22c55e' : '#a3a3a3',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: '500',
-                                            transition: 'all 0.2s',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        <TrendingUp size={18} />
-                                        Long
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, direction: 'short' })}
-                                        style={{
-                                            flex: 1,
-                                            padding: '10px 16px',
-                                            borderRadius: '8px',
-                                            border: formData.direction === 'short' ? '2px solid #ef4444' : '1px solid #404040',
-                                            backgroundColor: formData.direction === 'short' ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
-                                            color: formData.direction === 'short' ? '#ef4444' : '#a3a3a3',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: '500',
-                                            transition: 'all 0.2s',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        <TrendingDown size={18} />
-                                        Short
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Row 2: Price Levels */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                            <div>
-                                <label style={labelStyle}>Entry Price *</label>
-                                <input
-                                    type="number"
-                                    step="0.00001"
-                                    value={formData.entryPrice}
-                                    onChange={(e) => setFormData({ ...formData, entryPrice: e.target.value })}
-                                    style={inputStyle}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Exit Price</label>
-                                <input
-                                    type="number"
-                                    step="0.00001"
-                                    value={formData.exitPrice}
-                                    onChange={(e) => setFormData({ ...formData, exitPrice: e.target.value })}
-                                    style={inputStyle}
-                                />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Stop Loss</label>
-                                <input
-                                    type="number"
-                                    step="0.00001"
-                                    value={formData.stopLoss}
-                                    onChange={(e) => setFormData({ ...formData, stopLoss: e.target.value })}
-                                    style={inputStyle}
-                                />
                             </div>
                             <div>
                                 <label style={labelStyle}>Take Profit</label>
@@ -297,125 +193,51 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                             </div>
                         </div>
 
-                        {/* Row 3: Trading Details */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '20px' }}>
                             <div>
-                                <label style={labelStyle}>Lot Size</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.lotSize}
-                                    onChange={(e) => setFormData({ ...formData, lotSize: e.target.value })}
-                                    style={inputStyle}
+                                <label style={labelStyle}>Mistake</label>
+                                <textarea
+                                    value={formData.mistake}
+                                    onChange={(e) => setFormData({ ...formData, mistake: e.target.value })}
+                                    rows={3}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 16px',
+                                        backgroundColor: '#262626',
+                                        border: '1px solid #404040',
+                                        borderRadius: '8px',
+                                        color: '#fff',
+                                        fontSize: '14px',
+                                        resize: 'vertical',
+                                        outline: 'none',
+                                        fontFamily: 'inherit'
+                                    }}
+                                    placeholder="What went wrong?"
                                 />
                             </div>
                             <div>
-                                <label style={labelStyle}>Timeframe</label>
-                                <select
-                                    value={formData.timeframe}
-                                    onChange={(e) => setFormData({ ...formData, timeframe: e.target.value })}
-                                    style={inputStyle}
-                                >
-                                    {TIMEFRAMES.map(tf => <option key={tf} value={tf}>{tf}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Session</label>
-                                <select
-                                    value={formData.session}
-                                    onChange={(e) => setFormData({ ...formData, session: e.target.value })}
-                                    style={inputStyle}
-                                >
-                                    {SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Strategy Tags */}
-                        <div>
-                            <label style={labelStyle}>Strategy</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                                {STRATEGIES.map(strategy => (
-                                    <button
-                                        key={strategy}
-                                        type="button"
-                                        onClick={() => {
-                                            const tags = formData.tags || []
-                                            setFormData({
-                                                ...formData,
-                                                tags: tags.includes(strategy)
-                                                    ? tags.filter((t: string) => t !== strategy)
-                                                    : [...tags, strategy]
-                                            })
-                                        }}
-                                        style={{
-                                            padding: '10px 20px',
-                                            borderRadius: '8px',
-                                            border: formData.tags?.includes(strategy) ? '2px solid #f97316' : '1px solid #404040',
-                                            backgroundColor: formData.tags?.includes(strategy) ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
-                                            color: formData.tags?.includes(strategy) ? '#f97316' : '#a3a3a3',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: '500',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {strategy}
-                                    </button>
-                                ))}
+                                <label style={labelStyle}>Improvement</label>
+                                <textarea
+                                    value={formData.improvement}
+                                    onChange={(e) => setFormData({ ...formData, improvement: e.target.value })}
+                                    rows={3}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 16px',
+                                        backgroundColor: '#262626',
+                                        border: '1px solid #404040',
+                                        borderRadius: '8px',
+                                        color: '#fff',
+                                        fontSize: '14px',
+                                        resize: 'vertical',
+                                        outline: 'none',
+                                        fontFamily: 'inherit'
+                                    }}
+                                    placeholder="What will you do better next time?"
+                                />
                             </div>
                         </div>
 
-                        {/* Psychology Section */}
-                        <div>
-                            <label style={labelStyle}>How did you feel?</label>
-                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                                {MOODS.map(mood => (
-                                    <button
-                                        key={mood.label}
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, mood: mood.label })}
-                                        style={{
-                                            fontSize: '36px',
-                                            padding: '12px',
-                                            borderRadius: '12px',
-                                            border: formData.mood === mood.label ? '2px solid #f97316' : '1px solid #404040',
-                                            backgroundColor: formData.mood === mood.label ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        title={mood.label}
-                                    >
-                                        {mood.emoji}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Notes */}
-                        <div>
-                            <label style={labelStyle}>Trade Notes</label>
-                            <textarea
-                                value={formData.notes}
-                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                rows={4}
-                                style={{
-                                    width: '100%',
-                                    padding: '12px 16px',
-                                    backgroundColor: '#262626',
-                                    border: '1px solid #404040',
-                                    borderRadius: '8px',
-                                    color: '#fff',
-                                    fontSize: '14px',
-                                    resize: 'vertical',
-                                    outline: 'none',
-                                    fontFamily: 'inherit'
-                                }}
-                                placeholder="What was your thesis? How did you manage the trade?"
-                            />
-                        </div>
-
-                        {/* File Upload */}
                         <div>
                             <label style={labelStyle}>Screenshots</label>
                             <div style={{
@@ -451,7 +273,6 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                             </div>
                         </div>
 
-                        {/* Actions */}
                         <div style={{
                             display: 'flex',
                             gap: '16px',
@@ -473,8 +294,8 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                                     cursor: 'pointer',
                                     transition: 'background-color 0.2s'
                                 }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#404040'}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#262626'}
+                                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#404040')}
+                                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#262626')}
                             >
                                 Cancel
                             </button>

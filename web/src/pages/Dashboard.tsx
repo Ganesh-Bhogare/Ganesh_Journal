@@ -232,9 +232,17 @@ export default function Dashboard() {
         { name: 'Losses', value: Math.round((1 - (kpis.winRate || 0)) * 100) }
     ] : []
 
+    const getPnl = (trade: any) => {
+        if (Number.isFinite(Number(trade?.pnl))) return Number(trade.pnl)
+        if (Number.isFinite(Number(trade?.takeProfit))) return Number(trade.takeProfit)
+        return 0
+    }
+
     // Calculate comprehensive statistics
     const stats = allTrades.reduce((acc, trade) => {
-        const pnl = trade.pnl || 0
+        const pnl = Number.isFinite(Number(trade?.pnl))
+            ? Number(trade.pnl)
+            : (Number.isFinite(Number(trade?.takeProfit)) ? Number(trade.takeProfit) : 0)
         acc.totalPnl += pnl
         acc.totalTrades++
 
@@ -281,7 +289,7 @@ export default function Dashboard() {
         const hour = new Date(trade.entryTime).getUTCHours()
         const hourKey = `${hour.toString().padStart(2, '0')}:00`
         if (!acc[hourKey]) acc[hourKey] = 0
-        acc[hourKey] += trade.pnl || 0
+        acc[hourKey] += getPnl(trade)
         return acc
     }, {} as Record<string, number>)
 
@@ -293,7 +301,7 @@ export default function Dashboard() {
     const dailyPnL = allTrades.reduce((acc, trade) => {
         const date = new Date(trade.date).toISOString().split('T')[0]
         if (!acc[date]) acc[date] = { win: 0, loss: 0, trades: 0, netPnl: 0 }
-        const pnl = trade.pnl || 0
+        const pnl = getPnl(trade)
         acc[date].trades++
         acc[date].netPnl += pnl
         if (pnl > 0) {
@@ -322,7 +330,7 @@ export default function Dashboard() {
     let maxLossStreak = 0
 
     sortedTrades.forEach(trade => {
-        const pnl = trade.pnl || 0
+        const pnl = getPnl(trade)
         const isWin = trade.outcome === 'win' || (!trade.outcome && pnl > 0)
 
         if (isWin) {
@@ -337,21 +345,21 @@ export default function Dashboard() {
     })
 
     // Calculate average win/loss amounts and duration
-    const winTrades = allTrades.filter(t => t.outcome === 'win' || (!t.outcome && (t.pnl || 0) > 0))
-    const lossTrades = allTrades.filter(t => t.outcome === 'loss' || (!t.outcome && (t.pnl || 0) < 0))
+    const winTrades = allTrades.filter(t => t.outcome === 'win' || (!t.outcome && getPnl(t) > 0))
+    const lossTrades = allTrades.filter(t => t.outcome === 'loss' || (!t.outcome && getPnl(t) < 0))
 
     const avgWin = winTrades.length > 0
-        ? winTrades.reduce((sum, t) => sum + Math.abs(t.pnl || 0), 0) / winTrades.length
+        ? winTrades.reduce((sum, t) => sum + Math.abs(getPnl(t)), 0) / winTrades.length
         : 0
     const avgLoss = lossTrades.length > 0
-        ? lossTrades.reduce((sum, t) => sum + Math.abs(t.pnl || 0), 0) / lossTrades.length
+        ? lossTrades.reduce((sum, t) => sum + Math.abs(getPnl(t)), 0) / lossTrades.length
         : 0
 
     const bestWin = winTrades.length > 0
-        ? Math.max(...winTrades.map(t => t.pnl || 0))
+        ? Math.max(...winTrades.map(t => getPnl(t)))
         : 0
     const worstLoss = lossTrades.length > 0
-        ? Math.min(...lossTrades.map(t => t.pnl || 0))
+        ? Math.min(...lossTrades.map(t => getPnl(t)))
         : 0
 
     // Trade duration
@@ -384,7 +392,7 @@ export default function Dashboard() {
 
     sortedTrades.forEach(trade => {
         const date = new Date(trade.date).toISOString().split('T')[0]
-        const pnl = trade.pnl || 0
+        const pnl = getPnl(trade)
 
         if (pnl > 0) {
             cumulativeWin += pnl
@@ -399,7 +407,7 @@ export default function Dashboard() {
     const dayOfWeekDistribution = allTrades.reduce((acc, trade) => {
         const day = new Date(trade.date).toLocaleDateString('en-US', { weekday: 'short' })
         if (!acc[day]) acc[day] = { win: 0, loss: 0 }
-        const pnl = trade.pnl || 0
+        const pnl = getPnl(trade)
         if (pnl > 0) acc[day].win++
         else if (pnl < 0) acc[day].loss++
         return acc
@@ -1132,28 +1140,39 @@ export default function Dashboard() {
                             </thead>
                             <tbody>
                                 {recentTrades.map((trade, i) => (
-                                    <motion.tr
-                                        key={trade._id}
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: i * 0.1 }}
-                                        className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
-                                    >
-                                        <td className="py-3">{new Date(trade.date).toLocaleDateString()}</td>
-                                        <td className="py-3 font-medium">{trade.instrument}</td>
-                                        <td className="py-3">
-                                            <span className={`px-2 py-1 rounded text-xs ${trade.direction === 'long' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
-                                                }`}>
-                                                {trade.direction.toUpperCase()}
-                                            </span>
-                                        </td>
-                                        <td className="py-3">{trade.entryPrice?.toFixed(5)}</td>
-                                        <td className="py-3">{trade.exitPrice?.toFixed(5) || '-'}</td>
-                                        <td className={`py-3 font-semibold ${(trade.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'
-                                            }`}>
-                                            {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
-                                        </td>
-                                    </motion.tr>
+                                    (() => {
+                                        const pnlValue = getPnl(trade)
+                                        const hasPnl = Number.isFinite(Number(trade?.pnl)) || Number.isFinite(Number(trade?.takeProfit))
+                                        return (
+                                            <motion.tr
+                                                key={trade._id}
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: i * 0.1 }}
+                                                className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
+                                            >
+                                                <td className="py-3">{new Date(trade.date).toLocaleDateString()}</td>
+                                                <td className="py-3 font-medium">{trade.instrument}</td>
+                                                <td className="py-3">
+                                                    <span
+                                                        className={`px-2 py-1 rounded text-xs ${trade.direction === 'long'
+                                                            ? 'bg-green-500/20 text-green-500'
+                                                            : trade.direction === 'short'
+                                                                ? 'bg-red-500/20 text-red-500'
+                                                                : 'bg-neutral-700/40 text-neutral-300'
+                                                            }`}
+                                                    >
+                                                        {String(trade.direction || 'n/a').toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3">{trade.entryPrice?.toFixed(5)}</td>
+                                                <td className="py-3">{trade.exitPrice?.toFixed(5) || '-'}</td>
+                                                <td className={`py-3 font-semibold ${pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                    {hasPnl ? `$${pnlValue.toFixed(2)}` : '-'}
+                                                </td>
+                                            </motion.tr>
+                                        )
+                                    })()
                                 ))}
                             </tbody>
                         </table>

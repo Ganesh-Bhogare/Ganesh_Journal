@@ -42,7 +42,10 @@ export default function CalendarView() {
 
                 const day = daysMap.get(dateKey)!
                 day.trades++
-                day.profit += trade.pnl || 0
+                const pnl = Number.isFinite(Number(trade?.pnl))
+                    ? Number(trade.pnl)
+                    : (Number.isFinite(Number(trade?.takeProfit)) ? Number(trade.takeProfit) : 0)
+                day.profit += pnl
                 day.outcome = day.profit > 0 ? 'win' : day.profit < 0 ? 'loss' : 'neutral'
             })
 
@@ -187,7 +190,7 @@ export default function CalendarView() {
                                 <div className="flex justify-between items-center p-3 bg-neutral-800/30 rounded-lg">
                                     <span className="text-neutral-400">Outcome</span>
                                     <span className={`font-bold text-lg ${selectedDay.outcome === 'win' ? 'text-green-500' :
-                                            selectedDay.outcome === 'loss' ? 'text-red-500' : 'text-yellow-500'
+                                        selectedDay.outcome === 'loss' ? 'text-red-500' : 'text-yellow-500'
                                         }`}>
                                         {selectedDay.outcome.toUpperCase()}
                                     </span>

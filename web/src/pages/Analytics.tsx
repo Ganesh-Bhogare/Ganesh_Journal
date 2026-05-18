@@ -16,6 +16,7 @@ type TradeItem = {
     setupType?: string
     outcome?: 'win' | 'loss' | 'breakeven'
     pnl?: number
+    takeProfit?: number
     rr?: number
     rMultiple?: number
     riskRespected?: boolean
@@ -34,7 +35,7 @@ function asNum(v: unknown) {
 
 function tradeOutcome(t: TradeItem) {
     if (t.outcome) return t.outcome
-    const pnl = asNum(t.pnl)
+    const pnl = asNum(t.pnl ?? t.takeProfit)
     if (pnl > 0) return 'win'
     if (pnl < 0) return 'loss'
     return 'breakeven'
@@ -177,7 +178,7 @@ export default function Analytics() {
         }
 
         for (const t of sorted) {
-            const pnl = asNum(t.pnl)
+            const pnl = asNum(t.pnl ?? t.takeProfit)
             const outcome = tradeOutcome(t)
             const pair = t.instrument || 'Unknown'
             const session = t.session || 'Unknown'
