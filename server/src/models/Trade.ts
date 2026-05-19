@@ -107,6 +107,8 @@ export interface ITrade extends Document {
 
     // Notes
     notes?: string;
+    mistake?: string;
+    improvement?: string;
 
     // External sync identifiers
     source?: string;
@@ -210,6 +212,8 @@ const TradeSchema = new Schema<ITrade>({
 
     // Notes
     notes: { type: String },
+    mistake: { type: String },
+    improvement: { type: String },
 
     // External sync identifiers
     source: { type: String },

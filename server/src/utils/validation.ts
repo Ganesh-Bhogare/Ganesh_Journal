@@ -119,6 +119,8 @@ export const tradeSchema = z.object({
 
     // Notes + legacy
     notes: z.string().optional(),
+    mistake: z.string().optional(),
+    improvement: z.string().optional(),
     tags: z.array(z.string()).optional(),
     timeframe: z.string().optional(),
 

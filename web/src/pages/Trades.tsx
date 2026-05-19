@@ -243,11 +243,19 @@ export default function Trades() {
         URL.revokeObjectURL(url)
     }
 
+    const detectDelimiter = (text: string) => {
+        const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) || ''
+        const commaCount = (firstLine.match(/,/g) || []).length
+        const tabCount = (firstLine.match(/\t/g) || []).length
+        return tabCount > commaCount ? '\t' : ','
+    }
+
     const parseCsvText = (text: string) => {
         const rows: string[][] = []
         let row: string[] = []
         let field = ''
         let inQuotes = false
+        const delimiter = detectDelimiter(text)
 
         const pushField = () => {
             row.push(field)
@@ -284,7 +292,7 @@ export default function Trades() {
                 continue
             }
 
-            if (ch === ',') {
+            if (ch === delimiter) {
                 pushField()
                 continue
             }
@@ -360,12 +368,18 @@ export default function Trades() {
 
             const headers = rows[0].map((h) => h.trim())
             const headerIndex: Record<string, number> = {}
-            headers.forEach((h, idx) => { headerIndex[h] = idx })
+            const normalizeHeader = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+            headers.forEach((h, idx) => { headerIndex[normalizeHeader(h)] = idx })
 
-            const get = (r: string[], key: string) => {
-                const idx = headerIndex[key]
-                return idx === undefined ? '' : (r[idx] ?? '')
+            const get = (r: string[], ...keys: string[]) => {
+                for (const key of keys) {
+                    const idx = headerIndex[normalizeHeader(key)]
+                    if (idx !== undefined) return r[idx] ?? ''
+                }
+                return ''
             }
+
+            const hasHeader = (...keys: string[]) => keys.some((key) => headerIndex[normalizeHeader(key)] !== undefined)
 
             const parseDateTime = (raw: any) => {
                 const s = String(raw ?? '').trim()
@@ -383,6 +397,18 @@ export default function Trades() {
                     return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
                 }
 
+                // Format: "18/05/2026" or "18/05/2026 12:25" (DD/MM/YYYY)
+                const dm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+                if (dm) {
+                    const day = Number(dm[1])
+                    const month = Number(dm[2])
+                    const year = Number(dm[3])
+                    const hour = Number(dm[4] || 0)
+                    const minute = Number(dm[5] || 0)
+                    const d = new Date(year, month - 1, day, hour, minute, 0)
+                    return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
+                }
+
                 const d = new Date(s)
                 return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
             }
@@ -395,8 +421,8 @@ export default function Trades() {
             }
 
             // Best-effort import: support either our export format OR broker statement format.
-            const isExportFormat = headerIndex['date'] !== undefined && headerIndex['direction'] !== undefined && headerIndex['entryPrice'] !== undefined
-            const isBrokerFormat = headerIndex['open_time'] !== undefined && headerIndex['open_price'] !== undefined && headerIndex['side'] !== undefined
+            const isExportFormat = hasHeader('date') && hasHeader('direction', 'type', 'side') && hasHeader('entryPrice', 'entry', 'open_price')
+            const isBrokerFormat = hasHeader('open_time') && hasHeader('open_price') && hasHeader('side')
 
             if (!isExportFormat && !isBrokerFormat) {
                 alert('Invalid CSV format. Use our exported CSV, or a broker CSV with columns: instrument, side, open_time, open_price')
@@ -407,14 +433,14 @@ export default function Trades() {
                 .filter((r) => r.some((c) => String(c).trim() !== ''))
                 .map((r) => {
                     if (isBrokerFormat) {
-                        const instrument = toText(get(r, 'instrument'))
-                        const direction = normalizeDirection(get(r, 'side'))
-                        const openTimeIso = parseDateTime(get(r, 'open_time'))
-                        const closeTimeIso = parseDateTime(get(r, 'close_time'))
+                        const instrument = toText(get(r, 'instrument', 'pair', 'symbol'))
+                        const direction = normalizeDirection(get(r, 'side', 'type', 'direction'))
+                        const openTimeIso = parseDateTime(get(r, 'open_time', 'openTime', 'date'))
+                        const closeTimeIso = parseDateTime(get(r, 'close_time', 'closeTime'))
 
                         const fees = toNum(get(r, 'fees'))
-                        const pnl = toNum(get(r, 'pnl'))
-                        const existingNotes = toText(get(r, 'notes'))
+                        const pnl = toNum(get(r, 'pnl', 'p&l', 'p/l', 'profitLoss', 'profit'))
+                        const existingNotes = toText(get(r, 'notes', 'comment', 'remarks'))
                         const notes = fees !== undefined
                             ? (existingNotes ? `${existingNotes} | Fees: ${fees}` : `Fees: ${fees}`)
                             : existingNotes
@@ -424,12 +450,12 @@ export default function Trades() {
                             instrument,
                             direction,
                             entryTime: openTimeIso,
-                            entryPrice: toNum(get(r, 'open_price')),
+                            entryPrice: toNum(get(r, 'open_price', 'entry', 'entryPrice')),
                             exitTime: closeTimeIso,
-                            exitPrice: toNum(get(r, 'close_price')),
-                            stopLoss: toNum(get(r, 'stop_loss')),
-                            takeProfit: toNum(get(r, 'take_profit')),
-                            lotSize: toNum(get(r, 'lot_size')),
+                            exitPrice: toNum(get(r, 'close_price', 'exit', 'exitPrice')),
+                            stopLoss: toNum(get(r, 'stop_loss', 'sl', 'stopLoss')),
+                            takeProfit: toNum(get(r, 'take_profit', 'tp', 'takeProfit')),
+                            lotSize: toNum(get(r, 'lot_size', 'lots', 'lotSize', 'lot')),
                             pnl,
                             notes,
                         }
@@ -437,9 +463,9 @@ export default function Trades() {
 
                     // Our export format
                     return {
-                        date: toText(get(r, 'date')),
-                        instrument: toText(get(r, 'instrument')),
-                        direction: normalizeDirection(get(r, 'direction')),
+                        date: parseDateTime(get(r, 'date', 'open_time', 'openTime')),
+                        instrument: toText(get(r, 'instrument', 'pair', 'symbol')),
+                        direction: normalizeDirection(get(r, 'direction', 'type', 'side')),
                         session: toText(get(r, 'session')),
                         killzone: toText(get(r, 'killzone')),
                         weeklyBias: toText(get(r, 'weeklyBias')),
@@ -448,17 +474,17 @@ export default function Trades() {
                         isPremiumDiscount: toBool(get(r, 'isPremiumDiscount')),
                         setupType: toText(get(r, 'setupType')),
                         pdArrays: splitList(get(r, 'pdArrays')),
-                        entryTime: toText(get(r, 'entryTime')),
+                        entryTime: parseDateTime(get(r, 'entryTime', 'open_time', 'openTime')),
                         entryTimeframe: toText(get(r, 'entryTimeframe')),
                         entryConfirmation: toText(get(r, 'entryConfirmation')),
-                        entryPrice: toNum(get(r, 'entryPrice')),
-                        stopLoss: toNum(get(r, 'stopLoss')),
-                        takeProfit: toNum(get(r, 'takeProfit')),
-                        exitTime: toText(get(r, 'exitTime')),
-                        exitPrice: toNum(get(r, 'exitPrice')),
-                        lotSize: toNum(get(r, 'lotSize')),
+                        entryPrice: toNum(get(r, 'entryPrice', 'entry', 'open_price', 'openPrice')),
+                        stopLoss: toNum(get(r, 'stopLoss', 'sl', 'stop_loss')),
+                        takeProfit: toNum(get(r, 'takeProfit', 'tp', 'take_profit')),
+                        exitTime: parseDateTime(get(r, 'exitTime', 'close_time', 'closeTime')),
+                        exitPrice: toNum(get(r, 'exitPrice', 'exit', 'close_price', 'closePrice')),
+                        lotSize: toNum(get(r, 'lotSize', 'lots', 'lot')),
                         riskPerTrade: toNum(get(r, 'riskPerTrade')),
-                        pnl: toNum(get(r, 'pnl')),
+                        pnl: toNum(get(r, 'pnl', 'p&l', 'p/l', 'profitLoss', 'profit')),
                         emotionalState: toText(get(r, 'emotionalState')),
                         partialTaken: toBool(get(r, 'partialTaken')),
                         slMovedToBE: toBool(get(r, 'slMovedToBE')),
@@ -471,8 +497,8 @@ export default function Trades() {
                         mfe: toNum(get(r, 'mfe')),
                         htfLevelUsed: toText(get(r, 'htfLevelUsed')),
                         ltfConfirmationQuality: toText(get(r, 'ltfConfirmationQuality')),
-                        notes: toText(get(r, 'notes')),
-                        tags: splitList(get(r, 'tags')),
+                        notes: toText(get(r, 'notes', 'comment', 'remarks')),
+                        tags: splitList(get(r, 'tags', 'tag')),
                     }
                 })
 
