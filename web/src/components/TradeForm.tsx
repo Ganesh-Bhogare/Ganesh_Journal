@@ -38,7 +38,9 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
         instrument: trade?.instrument || 'EURUSD',
         direction: trade?.direction || 'long',
         entryPrice: trade?.entryPrice || '',
+        stopLoss: trade?.stopLoss || '',
         takeProfit: trade?.takeProfit || '',
+        pnl: trade?.pnl ?? '',
         mistake: trade?.mistake || '',
         improvement: trade?.improvement || ''
     })
@@ -56,7 +58,9 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                 instrument: formData.instrument,
                 direction: formData.direction,
                 entryPrice: parseFloat(formData.entryPrice as string),
+                stopLoss: formData.stopLoss ? parseFloat(formData.stopLoss as string) : undefined,
                 takeProfit: formData.takeProfit ? parseFloat(formData.takeProfit as string) : undefined,
+                pnl: formData.pnl !== '' ? Number(formData.pnl) : undefined,
                 mistake: formData.mistake,
                 improvement: formData.improvement
             }
@@ -213,12 +217,34 @@ export default function TradeForm({ onClose, onSuccess, trade }: TradeFormProps)
                                 />
                             </div>
                             <div>
-                                <label style={labelStyle}>PnL (use - for loss)</label>
+                                <label style={labelStyle}>Stop Loss</label>
                                 <input
                                     type="number"
                                     step="0.00001"
+                                    min="0"
+                                    value={formData.stopLoss}
+                                    onChange={(e) => setFormData({ ...formData, stopLoss: e.target.value })}
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Take Profit</label>
+                                <input
+                                    type="number"
+                                    step="0.00001"
+                                    min="0"
                                     value={formData.takeProfit}
                                     onChange={(e) => setFormData({ ...formData, takeProfit: e.target.value })}
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>PnL (use - for loss)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.pnl}
+                                    onChange={(e) => setFormData({ ...formData, pnl: e.target.value })}
                                     style={inputStyle}
                                 />
                             </div>

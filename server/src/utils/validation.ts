@@ -80,7 +80,7 @@ export const tradeSchema = z.object({
     entryConfirmation: z.string().optional(),
     entryPrice: z.coerce.number().positive(),
     stopLoss: z.coerce.number().positive().optional(),
-    takeProfit: z.coerce.number().optional(),
+    takeProfit: z.coerce.number().positive().optional(),
     riskPerTrade: z.coerce.number().positive().optional(),
 
     // Optional auto-calculated/manual sizing

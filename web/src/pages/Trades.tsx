@@ -87,6 +87,9 @@ export default function Trades() {
             if (Number.isFinite(tpFallback) && !Number.isFinite(Number(trade?.exitPrice)) && !Number.isFinite(entry)) {
                 return { value: tpFallback, projected: false }
             }
+            if (Number.isFinite(tpFallback) && tpFallback < 0) {
+                return { value: tpFallback, projected: false }
+            }
         }
 
         // Funded provider values are broker-calculated; keep broker P&L for accuracy.
@@ -96,7 +99,7 @@ export default function Trades() {
 
         const target = Number.isFinite(Number(trade?.exitPrice))
             ? Number(trade.exitPrice)
-            : Number.isFinite(Number(trade?.takeProfit))
+            : (Number.isFinite(Number(trade?.takeProfit)) && Number(trade.takeProfit) >= 0)
                 ? Number(trade.takeProfit)
                 : undefined
 
@@ -876,7 +879,11 @@ export default function Trades() {
                                                 <td className="py-3 text-sm">{trade.entryPrice?.toFixed(5)}</td>
                                                 <td className="py-3 text-sm">{trade.exitPrice?.toFixed(5) || '-'}</td>
                                                 <td className="py-3 text-sm text-red-400">{trade.stopLoss?.toFixed(5) || '-'}</td>
-                                                <td className="py-3 text-sm text-green-400">{trade.takeProfit?.toFixed(5) || '-'}</td>
+                                                <td className="py-3 text-sm text-green-400">
+                                                    {Number.isFinite(Number(trade.takeProfit)) && Number(trade.takeProfit) >= 0
+                                                        ? Number(trade.takeProfit).toFixed(5)
+                                                        : '-'}
+                                                </td>
                                                 <td className="py-3 text-sm">{Number.isFinite(Number(trade.lotSize)) ? Number(trade.lotSize).toFixed(2) : '-'}</td>
                                                 <td className={`py-3 font-semibold ${isPos ? 'text-green-500' : 'text-red-500'}`}>
                                                     {typeof pnlVal === 'number'
@@ -1051,7 +1058,11 @@ export default function Trades() {
                                 </div>
                                 <div className="p-3 rounded-lg bg-neutral-800/35 border border-neutral-800">
                                     <div className="text-neutral-400 text-xs mb-1">Take Profit</div>
-                                    <div className="font-semibold text-green-400">{viewingTrade.takeProfit ?? '-'}</div>
+                                    <div className="font-semibold text-green-400">
+                                        {Number.isFinite(Number(viewingTrade?.takeProfit)) && Number(viewingTrade?.takeProfit) >= 0
+                                            ? Number(viewingTrade.takeProfit).toFixed(5)
+                                            : '-'}
+                                    </div>
                                 </div>
                             </div>
                             <div className="mt-3 p-3 rounded-lg bg-neutral-800/30 border border-neutral-800">
