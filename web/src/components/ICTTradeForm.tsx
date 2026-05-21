@@ -230,7 +230,7 @@ export default function ICTTradeForm({ onClose, onSuccess, trade }: ICTTradeForm
                                 />
                             </div>
                             <div>
-                                <label style={labelStyle}>Take Profit</label>
+                                <label style={labelStyle}>PnL (use - for loss)</label>
                                 <input
                                     type="number"
                                     step="0.00001"
